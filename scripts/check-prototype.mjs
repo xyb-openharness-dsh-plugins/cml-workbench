@@ -48,8 +48,11 @@ if (fails.length === 0) {
 
   /* --- AI 按钮 --- */
   if (!/cml:agent-draft/.test(js)) F('ai/event', '未派发 cml:agent-draft 事件'); else O('ai/event', '有 cml:agent-draft');
-  const aiCount = (js.match(/cml:agent-draft/g) || []).length;
-  if (aiCount < 8) F('ai/coverage', `AI 入口仅 ${aiCount} 处（10 页至少要 8 页，打卡与 TFR/生育可除外）`); else O('ai/coverage', `AI 入口 ${aiCount} 处`);
+  const aiPages = [...new Set([...js.matchAll(/aiButton\(\s*'([a-z]+)'/g)].map((m) => m[1]))];
+  const need = ['dash', 'mol', 'med', 'ae', 'cost', 'prep', 'docs', 'trial'];
+  const lack = need.filter((p) => !aiPages.includes(p));
+  if (lack.length) F('ai/coverage', `这些页没有 AI 入口：${lack.join(',')}（AI 覆盖页 ${aiPages.join(',')}）`); else O('ai/coverage', `AI 入口覆盖 ${aiPages.length} 页：${aiPages.join(',')}`);
+  if (aiPages.includes('tfr') || aiPages.includes('fert')) F('ai/forbidden', 'TFR 或生育页出现 AI 生成入口（红线：重大决策不 AI 生成）'); else O('ai/forbidden', 'TFR/生育无 AI 生成入口');
 
   /* --- private 三出口 --- */
   if (!/function\s+filterPrivate/.test(js)) F('private/fn', '未找到统一 filterPrivate 函数'); else O('private/fn', '有 filterPrivate');
@@ -73,9 +76,18 @@ if (fails.length === 0) {
   if (!/margin-top:\s*auto/.test(css)) F('footer', '页脚未贴底（缺 margin-top:auto）'); else O('footer', '页脚贴底');
 
   /* --- 判读词（红线 K1） --- */
-  const banned = ['达标', '未达标', '建议治疗', '可以停药', '无需就医', '治愈率', 'risk_level', '诊断结论'];
-  const hits = banned.filter((w) => src.includes(w));
-  if (hits.length) F('wording', `禁词命中：${hits.join('、')}`); else O('wording', '禁词 0 命中');
+  /* 禁词只扫"会被用户看到/会进导出的文本"：
+     - HTML 注释（含文末自查清单）与 JS 注释不算内容，先剥离；
+     - 带来源的医生原话/报告原文用 <q class="quote"> 包裹，属"引用原文"而非本仓结论，单独统计不判违规；
+     - q 标签内若同条无来源标注，仍判违规（防止用引号夹带结论）。 */
+  const stripComments = (t) => t.replace(/<!--[\s\S]*?-->/g, '').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const visible = stripComments(html) + '\n' + stripComments(js) + '\n' + stripComments(css);
+  const banned = ['达标', '未达标', '建议治疗', '可以停药', '建议停药', '无需就医', '治愈率', 'risk_level', '诊断结论', '无需处理'];
+  const hits = banned.filter((w) => visible.includes(w));
+  const quoted = [...visible.matchAll(/<q[^>]*class="quote"[^>]*>([\s\S]*?)<\/q>/g)].map((m) => m[1]);
+  const quotedNoSrc = quoted.filter((t) => /达标|未达标|可以停药|建议停药/.test(t));
+  if (hits.length) F('wording', `禁词命中（可见文本）：${hits.join('、')}`); else O('wording', `禁词 0 命中（已剥离注释；引用原文 ${quoted.length} 处单列）`);
+  if (quotedNoSrc.length) F('wording/quote', `引号内出现决策类词且来源不清：${quotedNoSrc.length} 处`); else O('wording/quote', '引用原文中无未标来源的决策词');
 
   /* --- 判断色阶（红绿好坏） --- */
   if (/--good|--bad|--ok-green|is-normal|is-abnormal/.test(src)) F('color/judgement', '出现好坏语义色阶'); else O('color/judgement', '无好坏语义色阶');

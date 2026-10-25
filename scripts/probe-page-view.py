@@ -46,7 +46,10 @@ def main():
               "charts": 0, "chart_fill_violations": [], "shots": [], "foldout": {}}
 
     with sync_playwright() as pw:
-        browser = pw.chromium.launch(headless=not args.headed)
+        try:
+            browser = pw.chromium.launch(headless=not args.headed, channel="chrome")
+        except Exception:
+            browser = pw.chromium.launch(headless=not args.headed)
         for w in WIDTHS:
             page = browser.new_page(viewport={"width": w, "height": 900})
             for pid, _label in PAGES:
@@ -92,16 +95,45 @@ def main():
         for pid, label in PAGES:
             page.goto(f"{base}#{pid}", wait_until="load"); page.wait_for_timeout(150)
             shot(f"01-{pid}")
-        # 折叠卡：收/展态各一张
-        page.goto(f"{base}#med", wait_until="load"); page.wait_for_timeout(200)
-        result["foldout"]["open_default"] = page.evaluate("() => document.querySelectorAll('details.phase-fold[open]').length")
-        result["foldout"]["cards"] = page.evaluate("() => document.querySelectorAll('details.phase-fold').length")
-        shot("02-med-foldout-collapsed")
-        page.evaluate("""() => { const d = document.querySelector('details.phase-fold'); if (d) d.open = true; }""")
-        page.wait_for_timeout(200)
-        result["foldout"]["blocks_first_card"] = page.evaluate(
-            "() => { const d = document.querySelector('details.phase-fold[open]'); return d ? d.querySelectorAll('section.pd-block').length : 0; }")
-        shot("03-med-foldout-expanded")
+        # 折叠卡：先定位在哪一页（提到≠覆盖，必须实渲找），再出收/展态截图
+        host = None
+        for pid, _label in PAGES:
+            page.goto(f"{base}#{pid}", wait_until="load"); page.wait_for_timeout(150)
+            n = page.evaluate("() => document.querySelectorAll('details.phase-fold').length")
+            result["foldout"].setdefault("cards_by_page", {})[pid] = n
+            if n and not host:
+                host = pid
+        result["foldout"]["host_page"] = host
+        if host:
+            page.goto(f"{base}#{host}", wait_until="load"); page.wait_for_timeout(200)
+            result["foldout"]["open_default"] = page.evaluate("() => document.querySelectorAll('details.phase-fold[open]').length")
+            result["foldout"]["cards"] = page.evaluate("() => document.querySelectorAll('details.phase-fold').length")
+            el = page.query_selector("details.phase-fold")
+            if el:
+                el.scroll_into_view_if_needed(); page.wait_for_timeout(120)
+                el.screenshot(path=str(shots / "02-foldout-collapsed.png"))
+                result["shots"].append(f"{args.shots}/02-foldout-collapsed.png")
+            page.evaluate("""() => { const d = document.querySelector('details.phase-fold'); if (d) d.open = true; }""")
+            page.wait_for_timeout(200)
+            el2 = page.query_selector("details.phase-fold[open]")
+            if el2:
+                el2.scroll_into_view_if_needed(); page.wait_for_timeout(150)
+                el2.screenshot(path=str(shots / "03-foldout-expanded.png"))
+                result["shots"].append(f"{args.shots}/03-foldout-expanded.png")
+            result["foldout"]["blocks_first_card"] = page.evaluate(
+                "() => { const d = document.querySelector('details.phase-fold[open]'); return d ? d.querySelectorAll('section.pd-block').length : 0; }")
+            result["foldout"]["block_titles"] = page.evaluate(
+                "() => { const d = document.querySelector('details.phase-fold[open]'); return d ? [...d.querySelectorAll('section.pd-block > h4, section.pd-block > .pd-title')].map(e => e.textContent.trim()) : []; }")
+            shot("03-foldout-expanded")
+        # 渲染态禁词（DOM textContent，比源码更权威）
+        banned_hits = []
+        for pid, _label in PAGES:
+            page.goto(f"{base}#{pid}", wait_until="load"); page.wait_for_timeout(120)
+            txt = page.evaluate("() => document.body.innerText")
+            for w in ["达标", "未达标", "可以停药", "建议停药", "无需就医", "治愈率"]:
+                if w in txt:
+                    banned_hits.append({"page": pid, "word": w})
+        result["banned_words_rendered"] = banned_hits
         page.goto(f"{base}#mol", wait_until="load"); page.wait_for_timeout(200)
         shot("04-mol-chart")
         page.goto(f"{base}#ae", wait_until="load"); page.wait_for_timeout(200)
@@ -109,11 +141,20 @@ def main():
         page.goto(f"{base}#tfr", wait_until="load"); page.wait_for_timeout(200)
         shot("06-tfr-checklist")
         page.close()
+        # 窄宽证据（30 号第一版）：800px 一档
+        np = browser.new_page(viewport={"width": 800, "height": 1100})
+        for pid in ["dash", "mol"]:
+            np.goto(f"{base}#{pid}", wait_until="load"); np.wait_for_timeout(200)
+            pth = str(shots / f"07-narrow800-{pid}.png")
+            np.screenshot(path=pth, full_page=True); result["shots"].append(f"{args.shots}/07-narrow800-{pid}.png")
+        np.close()
         browser.close()
     httpd.shutdown()
 
     result["pass"] = (not result["overflow"] and not result["font_violations"]
                       and not result["chart_fill_violations"] and result["charts"] >= 1
+                      and not result.get("banned_words_rendered")
+                      and bool(result["foldout"].get("host_page"))
                       and result["foldout"].get("open_default") == 0
                       and result["foldout"].get("blocks_first_card") == 5)
     print(json.dumps(result, ensure_ascii=False, indent=2))
