@@ -162,7 +162,13 @@ table.kv th{width:34%;white-space:nowrap}
 
 /* ---------- 趋势图 ---------- */
 .chart-wrap{overflow-x:auto;min-width:0;border:1px solid var(--line);border-radius:var(--radius);padding:4px;background:var(--card)}
-svg.chart{display:block;width:100%;min-width:560px;height:auto}
+svg.chart{display:block;width:100%;max-width:100%;min-width:0;height:auto}
+/* 30 号窄宽：图表在容器内横向滚动，页面本身不得溢出 */
+.chart-wrap{max-width:100%}
+@media (max-width:720px){
+  svg.chart{min-width:560px}
+  .chart-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+}
 svg.chart text{font-size:12.5px;fill:var(--muted)}
 svg.chart .axis{stroke:var(--line);stroke-width:1}
 svg.chart .line{fill:none;stroke:var(--accent);stroke-width:2;stroke-linecap:round}
@@ -286,11 +292,13 @@ svg.chart .legend{fill:var(--muted)}
   .session{flex:1 1 100%;width:auto;max-width:none;order:3;border-left:0;border-top:1px solid var(--line)}
   .card,.phase-fold,.chart-wrap{width:100%}
   svg.chart{min-height:180px;min-width:560px}
-  table.kv thead{display:none}
-  table.kv tr{display:block;border-bottom:1px solid var(--line)}
-  table.kv th,table.kv td{display:flex;gap:8px;border:0;padding:4px 0;width:auto}
-  table.kv td::before{content:attr(data-th);color:var(--muted);flex:0 0 38%;font-size:12.5px}
-  table.kv th{font-size:12.5px}
+  /* 30 号窄宽：表格一律转键值行（kv 与普通 dataTable 都适用） */
+  table thead{display:none}
+  table tr{display:block;border-bottom:1px solid var(--line);padding:4px 0}
+  table th,table td{display:flex;gap:8px;border:0;padding:3px 0;width:auto;max-width:100%;overflow-wrap:anywhere}
+  table td::before{content:attr(data-th);color:var(--muted);flex:0 0 38%;font-size:12.5px}
+  table th{font-size:12.5px}
+  table tr>td:only-child::before{content:"";flex:0}
   .topbar{padding:8px}
   #view{padding:8px}
 }
