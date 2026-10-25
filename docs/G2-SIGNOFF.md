@@ -14,7 +14,7 @@
 | 治疗线用 32 号折叠卡 | 7 张 `<details class="phase-fold">`，固定五块，共 35 块 | `node scripts/check-prototype.mjs` 的 foldout 断言 |
 | 窄宽 30 号 | 1440/1024/800/420 四档 × **11 页** × 展开态，横向溢出 0 | `python3 scripts/probe-page-view.py` |
 | HVT X1–X4 | X1=0（11 路由、孤儿 0）/ X2=0 / X3=0 / X4=0 | `python3 scripts/probe-ip-matrix.py` |
-| SVG 根 `class="chart"` | 6 个，`svg:not(.chart)=0` | `probe-page-view.py` 的 charts |
+| SVG 根 `class="chart"` | **8 个**（A+B × dash/mol/onechart/cost 各 1；`svg:not(.chart)=0`），加入一图秀后由 6 增至 8 | `probe-page-view.py` 的 charts |
 | smoothPath 用 Fritsch–Carlson | 自实现单调三次，含单调性修正 | `grep -n "function smoothPath" prototypes/v0.2/app.js` |
 | AI 按钮走 `xxx:agent-draft` 一键携带提示词 | `aiButton(page,label,prompt)`，有 prompt 时带 `data-prompt`，只填不发 | `probe-ip-matrix.py` 的 agent-draft 断言 |
 | 独立评审判 P0=0 | 前四轮：11 → 2 → 2 → 见第四轮 | `docs/PROTOTYPE-REVIEW*.md` |
