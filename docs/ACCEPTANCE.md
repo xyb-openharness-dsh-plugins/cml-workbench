@@ -56,6 +56,10 @@ Agent 是否运行在目标 Desktop 内：...
 | ACC-M08 | 一图秀只重绘面板：切换指标/时间窗/图层后 `#chart-panel` 节点同一性保持 | `window.__stamp === document.querySelector('#chart-panel')`（True） | ✅ 实测 |
 | ACC-M09 | 一图秀 R10：390px 下 `body.scrollWidth === innerWidth === 390`，横滚只在 `.chart-wrap` | `{sw:390, iw:390, cw:568}` | ✅ 实测 |
 | ACC-M10 | 一图秀 R12：`svg role="img"` + `aria-label`；每点有 `<title>` | DOM 断言（26 个 title） | ✅ 实测 |
+| ACC-M18 | 指标卡 24 号 MT08：键盘 Enter **和** Space 都能翻面；隐藏面不进 Tab 序 | Enter `false→true`、Space `false→true`；连按 12 次 Tab 焦点未落入任何 `[inert]` 元素（`focus inside inert = False`） | ✅ 实测 |
+| ACC-M19 | 指标卡 24 号 MT07：翻两次恢复正面且**页面高度不变** | `document.body.scrollHeight` 翻面前后均 900 | ✅ 实测 |
+| ACC-M20 | 指标卡隐藏面 `aria-hidden` + `inert` 随翻面互换 | 正面态：back `aria-hidden=true`+`inert`、front 无；翻面后：front `aria-hidden=true`+`inert`、back 无 | ✅ 实测 |
+| ACC-M21 | `prefers-reduced-motion: reduce` 下直接切终态 | `emulate_media(reduced_motion='reduce')` 后 `.mcard-inner` 的 `transition` 计算值为 `none` | ✅ 实测 |
 | ACC-M11 | 临床研究：入组档案 18 字段/7 组全部来自既有病情数据；完整度 `x/y`；缺失字段被列出 | A 14/18、B 13/18；缺失清单渲染 | ✅ 实测 |
 | ACC-M12 | 临床研究铁律：缺失字段**永远**流向「无法判定」，绝不流向「已满足」 | 读 `evalRule` 的 `tier(v)` 缺失分支 + A/B 各有无法判定项（A 3 项、B 4 项） | ✅ 实测 |
 | ACC-M13 | 临床研究表达约束（§4.4）：全页 0 处「匹配度/高匹配/推荐/按匹配度排序」；无绿红排名；汇总行只计数 | 渲染态文案扫描（banned=[]）+ 页脚文案核对 | ✅ 实测 |
