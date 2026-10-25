@@ -1,0 +1,13 @@
+{
+  "counts": {
+    "mol": 11,
+    "rx": 6,
+    "ae": 8,
+    "cost": 13
+  },
+  "profiles": [
+    "A",
+    "B"
+  ],
+  "generated_by": "demo/build-demo-data.mjs"
+}
