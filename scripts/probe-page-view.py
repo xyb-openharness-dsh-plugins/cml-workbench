@@ -134,6 +134,19 @@ def main():
                 if w in txt:
                     banned_hits.append({"page": pid, "word": w})
         result["banned_words_rendered"] = banned_hits
+        # 引用块必须有来源标注（患者原话/医生原话/报告原文照抄）
+        quote_stats = []
+        for pid, _label in PAGES:
+            page.goto(f"{base}#{pid}", wait_until="load"); page.wait_for_timeout(120)
+            st = page.evaluate("""() => {
+                const qs = [...document.querySelectorAll('q.quote')];
+                return { total: qs.length,
+                         without_src: qs.filter(q => !(q.nextElementSibling && q.nextElementSibling.classList.contains('src'))).length };
+            }""")
+            if st["total"]:
+                quote_stats.append({"page": pid, **st})
+        result["quotes"] = quote_stats
+        result["quotes_without_src_total"] = sum(q["without_src"] for q in quote_stats)
         page.goto(f"{base}#mol", wait_until="load"); page.wait_for_timeout(200)
         shot("04-mol-chart")
         page.goto(f"{base}#ae", wait_until="load"); page.wait_for_timeout(200)
@@ -153,7 +166,7 @@ def main():
 
     result["pass"] = (not result["overflow"] and not result["font_violations"]
                       and not result["chart_fill_violations"] and result["charts"] >= 1
-                      and not result.get("banned_words_rendered")
+                      and not result.get("banned_words_rendered") and result.get("quotes_without_src_total", 0) == 0
                       and bool(result["foldout"].get("host_page"))
                       and result["foldout"].get("open_default") == 0
                       and result["foldout"].get("blocks_first_card") == 5)

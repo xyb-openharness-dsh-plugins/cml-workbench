@@ -82,10 +82,21 @@ if (fails.length === 0) {
      - q 标签内若同条无来源标注，仍判违规（防止用引号夹带结论）。 */
   const stripComments = (t) => t.replace(/<!--[\s\S]*?-->/g, '').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
   const visible = stripComments(html) + '\n' + stripComments(js) + '\n' + stripComments(css);
-  const banned = ['达标', '未达标', '建议治疗', '可以停药', '建议停药', '无需就医', '治愈率', 'risk_level', '诊断结论', '无需处理'];
-  const hits = banned.filter((w) => visible.includes(w));
-  const quoted = [...visible.matchAll(/<q[^>]*class="quote"[^>]*>([\s\S]*?)<\/q>/g)].map((m) => m[1]);
-  const quotedNoSrc = quoted.filter((t) => /达标|未达标|可以停药|建议停药/.test(t));
+  /* 禁词分两类：
+     (a) 本仓结论类：任何位置出现即违规（含"可能复发/建议停药"这类把结论塞进引号的写法）；
+     (b) 引用类（达标/未达标/可以停药/异常…）：只允许出现在 <q class="quote"> 且紧跟 <span class="src">来源：…</span> 的引用里——
+         这是"医生原话/报告原文照抄"，不是本仓判断；无来源标注一律违规。
+     先按"引用块整体摘除"再扫 (a)+(b)，避免把带来源的原话误判（此前版本即因此误伤）。 */
+  const quotedRe = /<q[^>]*class="quote"[^>]*>([\s\S]*?)<\/q>\s*<span class="src">来源：([^<]*)<\/span>/g;
+  const quoted = [];
+  let mq;
+  while ((mq = quotedRe.exec(visible)) !== null) quoted.push({ text: mq[1], src: mq[2].trim() });
+  const srcLessQuotes = [...visible.matchAll(/<q[^>]*class="quote"[^>]*>([\s\S]*?)<\/q>(?!\s*<span class="src">)/g)]
+    .map((m) => m[1]).filter((t) => /达标|未达标|可以停药|建议停药|可能复发/.test(t));
+  const outside = visible.replace(/<q[^>]*class="quote"[\s\S]*?<\/q>\s*<span class="src">来源：[^<]*<\/span>/g, '');
+  const banned = ['达标', '未达标', '建议治疗', '可以停药', '建议停药', '可能复发', '无需就医', '治愈率', 'risk_level', '诊断结论', '无需处理'];
+  const hits = banned.filter((w) => outside.includes(w));
+  const quotedNoSrc = srcLessQuotes;
   if (hits.length) F('wording', `禁词命中（可见文本）：${hits.join('、')}`); else O('wording', `禁词 0 命中（已剥离注释；引用原文 ${quoted.length} 处单列）`);
   if (quotedNoSrc.length) F('wording/quote', `引号内出现决策类词且来源不清：${quotedNoSrc.length} 处`); else O('wording/quote', '引用原文中无未标来源的决策词');
 
