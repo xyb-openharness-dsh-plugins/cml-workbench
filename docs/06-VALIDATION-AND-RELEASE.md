@@ -288,3 +288,21 @@ GUI 启动一律用 `(unset ELECTRON_RUN_AS_NODE; open -a …)` 这种一次性�
 
 **未验证仍需如实保留**：左栏入口的鼠标点击与切换器条目（本轮用直接访问 `/ui/` 验证业务页，
 没有在 Desktop 窗口里点侧栏）；GUI 内 iframe 的视觉呈现（我的模型不支持读图，未做"看起来对不对"的判断）。
+
+### 装机终态（2026-10-25 20:14，真实 Desktop 宿主）
+
+| 项 | 结果 |
+| --- | --- |
+| tgz | `xyb-community-cml-workbench-0.1.0.tgz` · 26 文件 · sha256 `212910c9…` |
+| 安装位置 | `harness/profiles/web`（Desktop 实际读取的 profile），app 自带 pnpm 10.34.5，**先 `rm -rf node_modules/<pkg>` 再 install**（否则打印 Already up to date 但文件还是旧的） |
+| 登记 | `dependencies` + `dsh.profile.bundles` 两处；`check-install.mjs` ✓ |
+| 宿主工作台列表 | 「小粒宝 GranPal」出现在切换器里，与「🌙 小睡宝 SnoozePal」「🌿 小呼宝 · PF-ILD」并列 |
+| `/api/cml-workbench/health` | **200** `{"ok":true,"version":"0.1.0",...}` |
+| `/api/cml-workbench/ui/` | **200** |
+| 11 个一级页 | 在带宿主鉴权的真实会话里逐个渲染出 h1，**0 pageerror** |
+| 顶栏「AI 对话」 | 文案/`aria-label`/`aria-expanded` 随状态变；隐藏只切 `hidden`，不结束会话 |
+| 「和 AI 讨论」 | 11 页各一个；点击填 242 字符（含本页关键信息 + 边界句）、拉起对话栏、**不发送**；TFR 页边界句为「不要给任何建议」 |
+
+**仍未验证（如实保留）**：
+1. 在 Desktop 窗口里**点切换器条目**后业务区的视觉呈现——自动化点击被"元素不可见"（下拉未展开）挡住，只核到条目存在于 DOM；
+2. 任何"看起来对不对"的判断题——本模型不支持读图。
