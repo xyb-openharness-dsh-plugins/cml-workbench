@@ -256,3 +256,35 @@ profile 用 `web`，`dsh web` 起在同一份配置上：`/api/cml-workbench/hea
 11 个一级页在**带宿主鉴权的真实会话**里逐个渲染出 h1、**0 pageerror、0 失败请求**。
 **未验证**：Desktop GUI 窗口内的左栏入口点击与切换器条目——因为该 GUI 在本机当前无法保持运行（与本次安装无关，见上表）。
 这一条按"未验证"如实记录，不写成通过。
+
+### 第十类的真凶：我自己的 shell 泄漏了 `ELECTRON_RUN_AS_NODE=1`
+
+上面那张排除表里前三条都排除了（摘包、换 DSH_HOME、换 userData 都一样秒退），说明问题在**启动环境**而不是内容。
+最后查到的原因非常具体：
+
+> 之前用 app CLI 跑 harness 时，为了让它当 Node 用，shell 里 `export ELECTRON_RUN_AS_NODE=1`。
+> 这个变量**留在当前 shell 里**，于是后续每一次 `open -a "DSH Desktop.app"` 都把它继承过去——
+> Electron 主进程以"纯 Node 模式"启动，不创建窗口、不写 harness.log、**exit code 0**。
+
+验证：`env | grep -i electron` 显示 `ELECTRON_RUN_AS_NODE=1`；
+`(unset ELECTRON_RUN_AS_NODE; open -a "DSH Desktop.app")` → **进程存活、harness.log 立刻开始增长**。
+
+**症状与"装错包"几乎一样**：进程秒退、日志不追加、退出码 0、没有任何报错。**但没有任何一条日志能指向你的包**——
+恰恰因为它在写日志之前就死了。所以正确顺序永远是：先怀疑启动环境，再用"摘掉自己的包"排除内容。
+
+**规则**：凡是用 `ELECTRON_RUN_AS_NODE=1` 跑过 app 自带 node/pnpm 的 shell，**跑完必须 unset**；
+GUI 启动一律用 `(unset ELECTRON_RUN_AS_NODE; open -a …)` 这种一次性子 shell，不要指望"我记得清理"。
+
+### 最终实测（真实 Desktop 宿主，2026-10-25 19:56）
+
+| 项 | 结果 |
+| --- | --- |
+| Desktop 进程 | 存活；`harness.log` 恢复增长 |
+| 插件激活 | 日志里 **0 条** `did not activate` / `failed to prepare`；仅有既有的 pf-ild peer 兼容性警告（与 CML 无关） |
+| `/api/cml-workbench/health` | **200** `{"ok":true,"version":"0.1.0","apiVersion":"v1",...}` |
+| `/api/cml-workbench/ui/` | **200** 16,646 字符 |
+| 11 个一级页 | 在**带宿主鉴权的真实会话**里逐个渲染出 h1，**0 横向溢出、0 pageerror、0 失败请求** |
+| `check-install.mjs` | ✓ 已登记到 Desktop 实际加载的 profile |
+
+**未验证仍需如实保留**：左栏入口的鼠标点击与切换器条目（本轮用直接访问 `/ui/` 验证业务页，
+没有在 Desktop 窗口里点侧栏）；GUI 内 iframe 的视觉呈现（我的模型不支持读图，未做"看起来对不对"的判断）。
