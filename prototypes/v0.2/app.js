@@ -424,11 +424,12 @@
     ],
     trial: [
       '<a class="btn btn-sm" href="#mol">去分子线看趋势</a>',
+      '<a class="btn btn-sm" href="#mol/cards">去指标卡（点卡片翻 3D 看历次）</a>',
       '<a class="btn btn-sm" href="#onechart">去病情一图秀叠看</a>',
       '<a class="btn btn-sm" href="#docs">去资料导入核对原文</a>'
     ],
     onechart: [
-      '<a class="btn btn-sm" href="#mol">去分子线看指标卡与词表</a>',
+      '<a class="btn btn-sm" href="#mol/cards">去分子线看指标卡（分系列 · 点卡片翻面）</a>',
       '<a class="btn btn-sm" href="#trial">去临床试验核对入组字段</a>'
     ]
   };
@@ -951,6 +952,7 @@
     }
     h += '<div class="row"><button type="button" class="btn" data-act="mol-new">记一笔复查</button>' +
       '<a class="btn" href="#mol">去分子线</a>' +
+      '<a class="btn" href="#mol/cards">指标卡（分系列 · 点卡片翻面）</a>' +
       '<a class="btn" href="#onechart">病情一图秀（叠看几条线）</a></div>';
     h += '<p class="muted">下次复查安排：' + esc(next ? next[0] + ' · ' + next[1] + ' · ' + next[3] : '未记录') + '（医生安排，仅照抄）</p></section>';
 
