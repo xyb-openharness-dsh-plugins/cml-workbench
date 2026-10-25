@@ -762,6 +762,53 @@
   /* ================= 通用片段 ================= */
   /* AI 按钮。传 prompt 时走 agent-draft（一键携带预写提示词+病情上下文，只填输入框不自动发送）；
      不传时走通用 ai 派发。两条路径都不替用户下结论。 */
+  /* 「和 AI 讨论」（脚手架标准 docs/20-AGENT-PANE-DESIGN §3.3）：每个一级页一个入口，
+     点它①把**本页关键事实**写进提示词（只陈述、不判定）②拉起 AI 对话栏。
+     **不代发**：只填进输入框，发不发由用户决定（IP10 同款守卫）。 */
+  function discussFacts(page) {
+    var p = profile();
+    var common = '档案 ' + state.profile + '（' + (p.name || '未记录') + '，' + authorRole() + '）';
+    var pcr = (metricByKey('pcr') || { points: [] }).points.slice().sort(function (a, b) { return t(a.d) - t(b.d); });
+    var last = pcr[pcr.length - 1];
+    var lastTxt = last ? ('最近 BCR::ABL1 ' + last.v + ' ' + (last.unit || 'IS%') + '（' + last.d + ' · ' +
+      (last.lab || '实验室未记录') + ' · IS 标化 ' + (last.is_std === 1 ? '是' : last.is_std === 0 ? '否' : '未记录') + '）')
+      : '还没有 BCR::ABL1 记录';
+    var bundle = prepBundle();
+    var byPage = {
+      dash: common + '；' + lastTxt + '；共 ' + pcr.length + ' 条分子学记录。',
+      mol: common + '；' + lastTxt + '；分子学记录 ' + pcr.length + ' 条，时间窗 ' + (state.molRange || 'all') + '。',
+      onechart: common + '；一图秀当前选 ' + oneChartSel().length + ' 条指标，时间窗 ' + (state.oneRange || 'all') +
+        '，治疗条' + (state.oneToggles.treatment ? '已开' : '已关') + '。',
+      med: common + '；处方变更 ' + ((p.rx || []).length) + ' 条。',
+      ae: common + '；副作用条目 ' + aeRows().length + ' 条（按当前用药过滤后）。',
+      tfr: common + '；TFR 必备项 ' + (((p.tfr || {}).must || []).length) + ' 条、最低项 ' + (((p.tfr || {}).min || []).length) + ' 条已抄录。',
+      cost: common + '；费用记录 ' + costRows().length + ' 条。',
+      fert: '档案 ' + state.profile + '；生育计划页只有事实卡与问题清单，共 ' + ((state.fertQByProfile[state.profile] || []).length) + ' 条待问问题。',
+      prep: '档案 ' + state.profile + '；复诊资料包区间 ' + prepRangeLabel() + '，事实区 ' + bundle.facts.length +
+        ' 条、看法区 ' + bundle.views.length + ' 条、问题清单 ' + bundle.questions.length + ' 条。',
+      docs: '档案 ' + state.profile + '；报告 ' + ((profile().docs || []).length) + ' 份，字段候选 ' + ((profile().candidates || []).length) + ' 条待逐项核对。',
+      trial: '档案 ' + state.profile + '；入组档案完整度 ' + (function () {
+        var f = enrollmentOf(state.profile);
+        return f.filter(function (x) { return x.present; }).length + '/' + f.length;
+      })() + '。'
+    };
+    return byPage[page] || common + '。';
+  }
+
+  /* 讨论提示词：事实 + 明确边界（只解释、不判定；红线页额外强调"不给倾向"） */
+  function discussPrompt(page) {
+    var base = aiPrompts(page) || '请帮我整理本页的记录。';
+    var boundary = AI_FORBIDDEN[page]
+      ? '这一页涉及重大决策，请只解释术语与整理事实，**不要给任何建议、结论或倾向**。'
+      : '只做解释与整理，不要给诊断、判读或治疗建议。';
+    return '【' + (ROUTE_LABEL[page] || '本页') + ' · 本页关键信息】' + discussFacts(page) + '\n\n' + base + '\n\n' + boundary;
+  }
+
+  function discussButton(page) {
+    return '<button type="button" class="btn btn-discuss" data-act="discuss" data-page="' + page +
+      '" aria-label="和 AI 讨论本页内容（拉起 AI 对话栏并携带本页关键信息，不代发）">和 AI 讨论</button>';
+  }
+
   function aiButton(page, label, prompt) {
     if (AI_FORBIDDEN[page]) return '';
     var txt = 'AI 协助（示例）' + (label ? ' · ' + esc(label) : '');
@@ -903,7 +950,7 @@
     var pcrMetric = metricByKey('pcr') || null;
 
     var h = '<div class="page-head"><h1>看板</h1>' +
-      badge('档案 ' + state.profile + ' · ' + authorView()) + badge('记录者随条目标注') + badge('构建 ' + BUILD) + badge(VERSION) + '</div>' +
+      badge('档案 ' + state.profile + ' · ' + authorView()) + badge('记录者随条目标注') + badge('构建 ' + BUILD) + badge(VERSION) + '<span class="head-actions">' + discussButton('dash') + '</span></div>' +
       '<p class="muted mem-notice" id="memNotice">' + MEM_NOTICE + '；本机写入只改变当前页面状态。</p>';
 
     h += '<div class="grid">';
@@ -1049,7 +1096,7 @@
   function pageMol() {
     var tabs = [['trend', '趋势与词表'], ['cards', '指标卡（分系列·翻面）'], ['lab', '复查记录 CML-LAB（二级）']];
     var h = '<div class="page-head"><h1>分子线</h1>' + badge('档案 ' + state.profile + ' · ' + authorView()) +
-      badge('图谱 CML-MOL') + badge('记录者随条目标注') + '</div>';
+      badge('图谱 CML-MOL') + badge('记录者随条目标注') + '<span class="head-actions">' + discussButton('mol') + '</span></div>';
     h += '<div class="tabs" role="tablist">' + tabs.map(function (tb) {
       return '<button type="button" class="tab" role="tab" aria-selected="' + (state.molTab === tb[0]) + '" data-act="mol-tab" data-v="' + tb[0] + '">' + esc(tb[1]) + '</button>';
     }).join('') + '</div>';
@@ -1273,7 +1320,7 @@
   function pageMed() {
     var p = profile(), ml = p.med_log || {};
     var tabs = [['checkin', '今日打卡'], ['calendar', '依从日历'], ['rx', '处方变更（二级）']];
-    var h = '<div class="page-head"><h1>服药线</h1>' + badge('档案 ' + state.profile + ' · ' + authorView()) + badge('图谱 CML-MED') + badge('记录者随条目标注') + '</div>';
+    var h = '<div class="page-head"><h1>服药线</h1>' + badge('档案 ' + state.profile + ' · ' + authorView()) + badge('图谱 CML-MED') + badge('记录者随条目标注') + '<span class="head-actions">' + discussButton('med') + '</span></div>';
     h += '<p class="muted">本一级页的 AI 协助入口在「处方变更（二级）」节（1 处）；「今日打卡」节不提供 AI 生成，理由写在该节内。' +
       '<button type="button" class="btn btn-sm" data-act="med-tab" data-v="rx">打开处方变更节</button></p>';
     h += '<div class="tabs" role="tablist">' + tabs.map(function (tb) {
@@ -1380,7 +1427,7 @@
     var shown = rows.filter(function (r) { return keep.indexOf(r.drug) >= 0 || r.example; });
     var hidden = rows.length - shown.length;
     var h = '<div class="page-head"><h1>副作用日志</h1>' + badge('档案 ' + state.profile + ' · ' + authorView()) +
-      badge('HVT-05 / HVT-09') + badge('记录者随条目标注') + '</div>';
+      badge('HVT-05 / HVT-09') + badge('记录者随条目标注') + '<span class="head-actions">' + discussButton('ae') + '</span></div>';
 
     h += '<section class="card"><div class="card-head"><h3>按当前用药过滤的词表</h3>' + badge('当前：' + currentDrugLabel()) +
       badge('已过滤掉 ' + hidden + ' 条非当前用药条目') + '</div>';
@@ -1470,7 +1517,7 @@
   }
   function pageTfr() {
     var tfr = profile().tfr || { must: [], min: [], monitor: [] };
-    var h = '<div class="page-head"><h1>TFR 档案</h1>' + badge('档案 ' + state.profile + ' · ' + authorView()) + badge('HVT-08') + badge('本页零判读') + '</div>';
+    var h = '<div class="page-head"><h1>TFR 档案</h1>' + badge('档案 ' + state.profile + ' · ' + authorView()) + badge('HVT-08') + badge('本页零判读') + '<span class="head-actions">' + discussButton('tfr') + '</span></div>';
 
     h += '<section class="card"><div class="card-head"><h3>核对状态（照抄）</h3>' + badge('核对状态：' + tfrStatusLabel(tfr.status)) + '</div>' +
       aiForbiddenNote('tfr') + tfrStatusDetail(tfr.status) +
@@ -1532,7 +1579,7 @@
     var monthSum = (byMonth[lastMonth] || []).reduce(function (a, c) { return a + Number(c.amt || 0) * Number(c.qty == null ? 1 : c.qty); }, 0);
 
     var h = '<div class="page-head"><h1>费用记录</h1>' + badge('档案 ' + state.profile + ' · ' + authorView()) +
-      badge('按月聚合，不跨药混算') + badge('记录者随条目标注') + '</div>' +
+      badge('按月聚合，不跨药混算') + badge('记录者随条目标注') + '<span class="head-actions">' + discussButton('cost') + '</span></div>' +
       '<p class="muted mem-notice">' + MEM_NOTICE + '：提交后当月聚合与按药小计立刻变化。</p>' +
       '<div class="row"><button type="button" class="btn" data-act="cost-new">记一笔</button>' +
       '<span class="muted">入口逐字：费用卡「记一笔」（手工 5 字段）。</span></div>';
@@ -1587,7 +1634,7 @@
   function pageFert() {
     var rows = fertilityRows();
     var h = '<div class="page-head"><h1>生育计划</h1>' + badge('档案 ' + state.profile + ' · ' + authorView()) +
-      badge('HVT-10') + badge('默认私密') + badge('记录者随条目标注') + '</div>';
+      badge('HVT-10') + badge('默认私密') + badge('记录者随条目标注') + '<span class="head-actions">' + discussButton('fert') + '</span></div>';
     h += '<section class="card">' + aiForbiddenNote('fert') + privateNote() + '</section>';
 
     h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>事实卡（零处置）</h3></div>';
@@ -1636,7 +1683,7 @@
     var keptSum = filterPrivate(b.all, 'summary');
     var sec = bundleSections(keptExport);
 
-    var h = '<div class="page-head"><h1>复诊准备</h1>' + badge('档案 ' + state.profile + ' · ' + authorView()) + badge('S5') + badge('记录者随条目标注') + '</div>';
+    var h = '<div class="page-head"><h1>复诊准备</h1>' + badge('档案 ' + state.profile + ' · ' + authorView()) + badge('S5') + badge('记录者随条目标注') + '<span class="head-actions">' + discussButton('prep') + '</span></div>';
     h += '<section class="card"><div class="card-head"><h3>时间区间</h3></div><div class="row">' +
       [['range-3m', '近 3 个月'], ['range-6m', '近 6 个月'], ['all', '全部']].map(function (o) {
         return '<button type="button" class="chip" data-act="prep-range" data-v="' + o[0] + '" aria-pressed="' + (state.prepRange === o[0]) + '">' + o[1] + '</button>';
@@ -1687,7 +1734,7 @@
     var acceptedN = cands.filter(function (c) { return c.status === '已接受'; }).length;
 
     var h = '<div class="page-head"><h1>资料导入</h1>' + badge('档案 ' + state.profile + ' · ' + authorView()) +
-      badge('MinerU 六部件') + badge('候选 → 核对 → 入库') + '</div>' +
+      badge('MinerU 六部件') + badge('候选 → 核对 → 入库') + '<span class="head-actions">' + discussButton('docs') + '</span></div>' +
       '<p class="muted mem-notice" id="memNotice">' + MEM_NOTICE + '：「接受」只改本页候选状态与计数。</p>';
 
     h += '<section class="card"><div class="card-head"><h3>① 拖放区</h3></div>' +
@@ -2210,7 +2257,7 @@
     var fs = enrollmentOf(state.profile);
     var present = fs.filter(function (f) { return f.present; }).length;
     var h = '<div class="page-head"><h1>临床试验</h1>' + badge('档案 ' + state.profile) +
-      badge('演示数据') + badge('完整度 ' + present + '/' + fs.length) + badge('无匹配度百分比') + '</div>';
+      badge('演示数据') + badge('完整度 ' + present + '/' + fs.length) + badge('无匹配度百分比') + '<span class="head-actions">' + discussButton('trial') + '</span></div>';
 
     /* ① 入组档案（建档：基因 / 病理 / 细胞遗传学 / 治疗史 / 器官功能） */
     h += '<section class="card">' + enrollmentBody() + '</section>';
@@ -2241,7 +2288,7 @@
   /* ================= 路由与渲染 ================= */
   function pageOneChart() {
     var h = '<div class="page-head"><h1>病情一图秀</h1>' + badge('档案 ' + state.profile + ' · ' + authorView()) +
-      badge('归一化叠看') + badge('不做加总') + '</div>';
+      badge('归一化叠看') + badge('不做加总') + '<span class="head-actions">' + discussButton('onechart') + '</span></div>';
     return h + oneChartBody();
   }
 
@@ -2282,6 +2329,35 @@
       if (isFinite(v)) return Math.max(25, Math.min(45, v));
     } catch (e) { /* ignore */ }
     return 35;
+  }
+
+  /* 用给定提示词派发（discuss 用；dispatchDraft 走 aiPrompts 的默认文案） */
+  function dispatchDraftText(page, prompt) {
+    var draft = makeDraft(page);
+    draft.prompt = prompt;
+    state.lastDraft = draft;
+    if (typeof CustomEvent === 'function') document.dispatchEvent(new CustomEvent('cml:agent-draft', { detail: draft }));
+    var box = $('aiPrompt');
+    if (box) box.value = prompt;
+    var hint = $('aiHint');
+    if (hint) hint.textContent = '已填入本页关键信息（未发送）：可以先改，再自己决定发不发。';
+  }
+  /* 拉起 AI 对话栏（隐藏 ≠ 结束会话）：页内面板 + 宿主外壳一起拉 */
+  function openAgentPane() {
+    state.panelCollapsed = false;
+    var s2 = $('session'); if (s2) s2.hidden = false;
+    var sp = $('splitter'); if (sp) sp.hidden = false;
+    var btn = $('panelToggle');
+    if (btn) {
+      btn.textContent = '收起 AI 对话';
+      btn.setAttribute('aria-expanded', 'true');
+      btn.setAttribute('aria-label', 'AI 对话：已展开');
+    }
+    /* 宿主形态：告诉外壳「用户要把原生 AI 对话栏拉起来」。
+       外壳负责真正的开合；页面自己那个会话区只是本地原型态。 */
+    if (window.parent !== window) {
+      try { window.parent.postMessage({ type: 'cml:agent-open' }, window.location.origin); } catch (e) { /* 外壳收不到就只开本页面板 */ }
+    }
   }
 
   function dispatchDraft(page) {
@@ -2436,17 +2512,29 @@
     if (act === 'cfg-path-cancel') { var g2 = $('cfgPathMsg'); if (g2) g2.textContent = '已取消，未写入。'; return; }
 
     if (act === 'panel-toggle') {
+      /* 脚手架标准（docs/20-AGENT-PANE-DESIGN §3.1）：顶栏是「AI 对话」开关，
+         隐藏 ≠ 结束会话；宿主形态下同时把意图转给外壳的真面板（public/bridge.js）。 */
       var s = $('session');
       if (!s) return;
       state.panelCollapsed = !state.panelCollapsed;
       s.hidden = state.panelCollapsed;
       var sp = $('splitter'); if (sp) sp.hidden = state.panelCollapsed;
-      el.textContent = state.panelCollapsed ? '重开会话区' : '收起会话区';
+      el.textContent = state.panelCollapsed ? '打开 AI 对话' : '收起 AI 对话';
       el.setAttribute('aria-expanded', String(!state.panelCollapsed));
+      el.setAttribute('aria-label', 'AI 对话：' + (state.panelCollapsed ? '已收起' : '已展开'));
+      if (window.parent !== window) {
+        try { window.parent.postMessage({ type: 'cml:agent-toggle' }, window.location.origin); } catch (e) { /* 外壳收不到就只动本页面板 */ }
+      }
       return;
     }
 
     if (act === 'ai') { dispatchDraft(el.getAttribute('data-page') || state.route); return; }
+    if (act === 'discuss') {
+      var dpage = el.getAttribute('data-page') || state.route;
+      dispatchDraftText(dpage, discussPrompt(dpage));
+      openAgentPane();
+      return;
+    }
     if (act === 'ai-send') { var h2 = $('aiHint'); if (h2) h2.textContent = '原型不发起真实请求（提示词已在输入框，需你手动发送）。'; return; }
     if (act === 'ai-clear') { var b = $('aiPrompt'); if (b) b.value = ''; return; }
 

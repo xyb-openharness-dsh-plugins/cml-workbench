@@ -404,3 +404,21 @@ h4.sub { margin: 14px 0 6px; font-size: 13px; font-weight: 600; }
 .legend-item .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
 .note-list { margin: 6px 0 0; padding-left: 18px; font-size: 12.5px; color: var(--muted); line-height: 1.6; }
 svg .ax { font-size: 12.5px; fill: var(--muted); }
+
+/* ===== 「和 AI 讨论」按钮与页头动作区（脚手架标准 docs/20-AGENT-PANE-DESIGN §3.3） =====
+   位置：页头右侧，与标题同一行；窄屏换行到标题下方，不挤压标题。
+   视觉：次要按钮（描边），不与主操作（橙色实心）抢注意力；
+   原因：这个按钮是「把本页事实带进对话」，是辅助动作，不是页面主任务。 */
+.page-head{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.page-head .head-actions{margin-inline-start:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.btn-discuss{
+  min-height:44px;padding:8px 16px;border-radius:999px;
+  border:1.5px solid var(--mint-ink,#22664e);background:transparent;color:var(--mint-ink,#22664e);
+  font-weight:600;cursor:pointer;white-space:nowrap;
+}
+.btn-discuss:hover{background:var(--mint,#e2f2ea)}
+.btn-ai{border-color:var(--mint-ink,#22664e);color:var(--mint-ink,#22664e);background:var(--mint,#e2f2ea)}
+@media (max-width:860px){
+  .page-head .head-actions{margin-inline-start:0;width:100%}
+  .btn-discuss{width:100%;justify-content:center}
+}
