@@ -1,0 +1,17 @@
+{
+  "packageName": "@xyb-community/cml-workbench",
+  "title": "小粒宝 GranPal · 慢性粒细胞白血病工作台",
+  "repository": "https://github.com/xyb-openharness-dsh-plugins/cml-workbench",
+  "description": "CML 患者与照护者的本机病程资料工作台：BCR::ABL1 国际标尺分子线、TKI 服药与换线档案、副作用日志、TFR 停药尝试旅程、用药费用记录",
+  "slug": "cml-workbench",
+  "layoutMode": "business-first",
+  "businessWidth": 0.65,
+  "targetUsers": "CML（慢性粒细胞白血病）患者本人为主体，家属/照护者代记为第二主体",
+  "scenario": "慢性期全程管理（确诊→TKI 治疗→换线/副作用/费用→TFR 停药尝试与密测）的本机资料整理、趋势回顾与就诊准备",
+  "coreFlow": [
+    "录入/导入一次复查报告（血常规、qPCR BCR::ABL1 IS%）并回看在分子趋势线上的位置",
+    "记录今日 TKI 服药与副作用，回顾月度依从与副作用时间线",
+    "复诊前生成问题清单与资料包，就诊后补充医嘱原文与换线记录"
+  ],
+  "completion": "患者能在复诊前把'我的分子线走势 + 我这段时间吃了什么药、有什么反应 + 我要问什么'一次性讲清并带走"
+}
