@@ -14,9 +14,10 @@
 <header class="topbar">
   <div class="brand">小粒宝 GranPal <span class="ver">v0.1.0</span></div>
 
-  <nav class="profiles" aria-label="档案切换">
-    <button type="button" class="chip" data-act="profile" data-p="A">档案 A · 患者本人</button>
-    <button type="button" class="chip" data-act="profile" data-p="B">档案 B · 家属代记</button>
+  <nav class="profiles" aria-label="档案切换（双主体：同一患者的两个记录视角）">
+    <button type="button" class="chip" data-act="profile" data-p="A">档案 A · 患者本人视角</button>
+    <button type="button" class="chip" data-act="profile" data-p="B">档案 B · 家属代记视角</button>
+    <span class="muted subj-note">双主体＝记录视角，不是两位患者；每条记录带「记录者」标记，切档案会清空未提交草稿。</span>
   </nav>
 
   <div class="topbar-right">
@@ -90,6 +91,7 @@
   <span>构建日：2026-10-25</span>
   <span>数据目录：~/GranPal/病历资料 · 状态：已挂载（本机）</span>
   <span>示例数据：prototypes/v0.2/demo-data.js（只读）</span>
+  <span class="mem-notice" id="memNoticeFooter">原型为内存态，刷新回到演示数据</span>
 </footer>
 
 <!-- 设置弹窗 CML-CFG：资料目录 / 凭据状态 / 临床数据包 / 关于与版本 -->

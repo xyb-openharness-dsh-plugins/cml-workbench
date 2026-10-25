@@ -200,8 +200,36 @@ svg.chart .legend{fill:var(--muted)}
 .ph-hint{font-size:12.5px;color:var(--muted);margin:8px 0}
 .pv-table{font-size:12.5px}
 
-/* 打印：不写就丢内容 */
-@media print{.phase-detail{display:grid!important} summary::after,.ph-hint{display:none} .phase-fold{break-inside:avoid}}
+/* ---------- 「⋯ 更多」收口（IP6：卡片只留 1 个显式编辑动作） ---------- */
+.more{border:1px dashed var(--line);border-radius:var(--radius);padding:8px;margin:8px 0 0}
+.more>summary{cursor:pointer;min-height:44px;display:flex;align-items:center;font-size:13px;color:var(--muted)}
+.more>summary::after{content:"▸";margin-left:8px;font-size:12.5px}
+.more[open]>summary::after{content:"▾"}
+.more-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+.more-list .btn{width:auto}
+
+/* ---------- 角标按钮（S6：点开词表卡） ---------- */
+.badge-btn{background:var(--card);cursor:pointer;min-height:44px;padding:0 8px;border-radius:999px}
+.badge-btn[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
+.gloss-card{border-left:2px solid var(--accent);margin-top:8px}
+
+/* ---------- 写入回执 / 高亮 ---------- */
+.ok{border:1px solid var(--accent);border-radius:var(--radius);padding:8px;font-size:12.5px;color:var(--fg);background:#2f6f6612}
+.mem-notice{color:var(--warn)}
+.ask-hi{background:#2f6f6612;border-radius:var(--radius);padding:8px 8px 8px 24px;outline:1px solid var(--accent)}
+.subj-note{font-size:12.5px;color:var(--muted);flex:1 1 100%}
+
+/* ---------- 血常规密测轨道（CML-LAB） ---------- */
+.track{display:flex;flex-wrap:wrap;gap:4px;margin:8px 0}
+.track-cell{
+  min-width:52px;min-height:24px;border:1px solid var(--line);border-radius:4px;
+  display:flex;align-items:center;justify-content:center;font-size:12.5px;color:var(--muted);padding:0 4px;
+}
+.track-dense{background:#2f6f6626;border-style:solid;color:var(--fg)}
+
+/* 打印：折叠卡内容靠 JS 在打印媒体下真正展开（display:grid 对闭合 details 无效） */
+@media print{.phase-detail{display:grid!important} summary::after,.ph-hint{display:none} .phase-fold{break-inside:avoid}
+  .more{border-style:solid} .more>summary::after{content:""}}
 
 /* ---------- 热度条（依从日历）---------- */
 .heat{display:flex;flex-wrap:wrap;gap:4px}

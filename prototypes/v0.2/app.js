@@ -20,10 +20,14 @@
   /* 红线：TFR 与生育两线不提供 AI 生成 */
   var AI_FORBIDDEN = { tfr: '红线：停药相关重大决策不 AI 生成', fert: '红线：生育相关重大决策不 AI 生成' };
 
+  /* P0-5：写入是本机内存态，页面必须明写这句（全站常量，页脚 + 各写入卡复用） */
+  var MEM_NOTICE = '原型为内存态，刷新回到演示数据';
+
   var state = {
     profile: 'A',
     route: 'dash',
     medTab: 'checkin',
+    molTab: 'trend',         /* trend | lab（CML-LAB「复查记录」二级页） */
     molKeys: ['pcr'],
     molRange: 'all',
     molScale: 'linear',
@@ -36,8 +40,28 @@
     tfrState: {},
     prepRange: 'range-3m',
     panelCollapsed: false,
-    lastDraft: null
+    lastDraft: null,
+    gloss: '',               /* S6：点开的里程碑角标 */
+    /* P0-11④：未提交草稿按档案分桶；切换档案时显式清空（另一档案的表单拿不到） */
+    drafts: { A: {}, B: {} },
+    /* 本机内存态新增记录（每档案独立；刷新回到 demo 数据） */
+    extra: {
+      A: { pcr: [], ae: [], cost: [], rx: [] },
+      B: { pcr: [], ae: [], cost: [], rx: [] }
+    },
+    accepted: { A: {}, B: {} },   /* P0-5：docs 候选「接受/更正」的真实状态 */
+    writes: []                    /* 最近写入回执（可观察） */
   };
+  function ex() { return state.extra[state.profile]; }
+  function draft() { return state.drafts[state.profile]; }
+  function lastWrite(kind) {
+    for (var i = state.writes.length - 1; i >= 0; i--) if (state.writes[i].kind === kind) return state.writes[i];
+    return null;
+  }
+  function noteWrite(kind, text) {
+    state.writes.push({ kind: kind, text: text, profile: state.profile });
+    if (state.writes.length > 20) state.writes.shift();
+  }
 
   /* ================= 基础工具 ================= */
 
@@ -55,13 +79,40 @@
   }
   function profile() { return DATA.profiles[state.profile] || {}; }
   function metrics() { return (DATA.metrics && DATA.metrics[state.profile]) || []; }
+  /* 本机内存态新增的费用条目 → 月度聚合点（每档案独立，刷新即消失） */
+  function costExtraPoints(entries) {
+    var byMonth = {};
+    (entries || []).forEach(function (e) {
+      var m = String(e.d || '').slice(0, 7);
+      if (!m) return;
+      byMonth[m] = (byMonth[m] || 0) + Number(e.amount || 0);
+    });
+    return Object.keys(byMonth).sort().map(function (m) {
+      return { d: m + '-01', v: byMonth[m], src: '本机新增（' + MEM_NOTICE + '）' };
+    });
+  }
+  /* P0-5：本机写入必须真的改变取数（趋势图新增点 / 费用聚合变化） */
   function metricByKey(k) {
     var ms = metrics();
-    for (var i = 0; i < ms.length; i++) if (ms[i].key === k) return ms[i];
+    for (var i = 0; i < ms.length; i++) {
+      if (ms[i].key !== k) continue;
+      var m = ms[i];
+      if (k === 'pcr' && (ex().pcr || []).length) {
+        m = Object.assign({}, m, { points: m.points.concat(ex().pcr) });
+      }
+      if (k === 'cost' && (ex().cost || []).length) {
+        m = Object.assign({}, m, { points: m.points.concat(costExtraPoints(ex().cost)) });
+      }
+      return m;
+    }
     return null;
   }
   function trials() { return DATA.trials || []; }
+  /* P0-11①：双主体＝同一患者的两条记录视角，不是两位患者 */
   function authorRole() { return state.profile === 'B' ? '家属代记' : '患者本人'; }
+  function authorView() { return state.profile === 'B' ? '家属代记视角' : '患者本人视角'; }
+  function recorderDefault() { return state.profile === 'B' ? '家属代记' : '本人'; }
+  function recBadge(r) { return badge('记录者：' + (r || recorderDefault())); }
 
   /* 顶栏/页脚/设置都读同一份版本字面量 */
   function version() { return VERSION; }
@@ -106,9 +157,19 @@
   }
 
   /* ================= 私密条目来源 ================= */
+  /* P0-11②：每档案每条的「记录者」（本人 / 家属代记），逐条可见 */
+  var FERT_RECORDER = {
+    A: ['本人', '本人', '本人'],
+    B: ['本人', '家属代记', '母子共同记录']
+  };
+  var AE_RECORDER = {
+    A: ['本人', '本人', '本人', '本人'],
+    B: ['家属代记', '家属代记', '家属代记', '家属代记']
+  };
   /* 生育计划：条目默认 visibility='private' */
   function fertilityRows() {
     var p = profile();
+    var rec = FERT_RECORDER[state.profile] || [];
     return (p.fertility || []).map(function (row, i) {
       return {
         id: 'fert-' + state.profile + '-' + i,
@@ -116,6 +177,7 @@
         label: row[0],
         text: row[1],
         source: row[2],
+        recorder: rec[i] || recorderDefault(),
         visibility: 'private'                 /* 默认 private */
       };
     });
@@ -127,20 +189,31 @@
   };
   function aeRows() {
     var p = profile();
+    var rec = AE_RECORDER[state.profile] || [];
     var rows = (p.ae || []).map(function (row, i) {
       var id = 'ae-' + state.profile + '-' + i;
       return {
         id: id, d: row[0], name: row[1], drug: row[2], desc: row[3],
         action: row[4], doc: row[5],
+        recorder: rec[i] || recorderDefault(),
         visibility: state.aeVis[id] || 'shared'
       };
     });
-    var ex = PRIVATE_AE_EXAMPLE[state.profile];
-    if (ex) {
+    /* P0-3：本机手工写入的条目（内存态） */
+    (ex().ae || []).forEach(function (e) {
+      rows.push({
+        id: e.id, d: e.d, name: e.name, drug: e.drug, desc: e.desc, action: e.action, doc: e.doc,
+        recorder: e.recorder || recorderDefault(), local: true,
+        visibility: state.aeVis[e.id] || 'shared'
+      });
+    });
+    var exr = PRIVATE_AE_EXAMPLE[state.profile];
+    if (exr) {
       var id2 = 'ae-' + state.profile + '-private';
       rows.push({
-        id: id2, d: ex.d, name: ex.name, drug: ex.drug, desc: ex.desc, action: ex.action,
-        doc: ex.doc, example: true,
+        id: id2, d: exr.d, name: exr.name, drug: exr.drug, desc: exr.desc, action: exr.action,
+        doc: exr.doc, example: true,
+        recorder: recorderDefault(),
         visibility: state.aeVis[id2] || 'private'   /* 私密条目默认 private */
       });
     }
@@ -154,6 +227,7 @@
         label: r.label || r.name,
         text: (r.text || r.desc),
         source: r.source || (r.d + ' ' + r.action),
+        recorder: r.recorder || recorderDefault(),
         visibility: r.visibility
       };
     });
@@ -192,6 +266,163 @@
       if (keep.indexOf(k) < 0) n += AE_LEXICON[k].length;
     });
     return n;
+  }
+  function drugLabelOf(key) {
+    return { dasatinib: '达沙替尼', imatinib: '伊马替尼', nilotinib: '尼洛替尼', withdrawal: '停药相关（停药综合征）' }[key] || key;
+  }
+
+  /* ================= 本机内存态记录（P0-2 / P0-3 / P0-4 / P0-5） ================= */
+  /* 费用：demo 行 + 本机新增行（同一个月聚合，不跨药混算） */
+  function costRows() {
+    var base = (profile().cost || []).map(function (c) {
+      return { m: c[0], drug: c[1], amt: c[2], qty: (c[3] == null ? 1 : c[3]), note: c[4], extra: c[5],
+        recorder: recorderDefault(), local: false };
+    });
+    (ex().cost || []).forEach(function (e) {
+      base.push({
+        m: String(e.d || '').slice(0, 7), drug: e.drug + (e.spec ? ' · ' + e.spec : ''), amt: Number(e.amount || 0), qty: 1,
+        note: '医保标记：' + e.insured + ' · 本机新增（' + MEM_NOTICE + '）', extra: '',
+        recorder: e.recorder || recorderDefault(), local: true, d: e.d
+      });
+    });
+    return base;
+  }
+  /* 处方变更：只新增分段（旧段不被覆盖） */
+  function rxRows() {
+    var rows = (profile().rx || []).map(function (r) {
+      return { start: r[0], drug: r[1], dose: r[2], freq: r[3], stop: r[4], reason: r[5],
+        src: r[6], doc: r[7], recorder: recorderDefault(), local: false };
+    });
+    (ex().rx || []).forEach(function (e) {
+      rows.push({ start: e.start, drug: e.drug, dose: e.dose, freq: e.freq, stop: e.stop,
+        reason: e.reason, src: e.src, doc: e.doc, recorder: e.recorder || recorderDefault(), local: true });
+    });
+    return rows;
+  }
+  /* 原因原文：医生原话一律进 <q class="quote"> + 紧邻 <span class="src">（红线） */
+  function rxReasonCell(r) {
+    var raw = String(r.reason == null ? '' : r.reason);
+    var m = /^医生原话：「([\s\S]*)」$/.exec(raw);
+    if (m) return q(m[1], (r.src || '未记录') + (r.doc ? ' · 文件 ' + r.doc : ''));
+    if (!raw || raw === '—') return esc(raw || '—');
+    return esc(raw) + '<span class="src">来源：' + esc((r.src || '未记录') + (r.doc ? ' · 文件 ' + r.doc : '')) + '</span>';
+  }
+
+  /* ================= P0-10：TFR 只记「字段有没有出现在报告里」 ================= */
+  var TFR_STATES = ['已抄录', '未抄录', '待补'];
+  function tfrMapState(raw) {
+    var s = String(raw == null ? '' : raw).trim();
+    if (TFR_STATES.indexOf(s) >= 0) return s;
+    if (s === '已确认') return '已抄录';       /* 报告里出现了这个字段 */
+    if (s === '未确认') return '未抄录';       /* 报告里还没抄到这个字段 */
+    if (s === '不适用') return '待补';
+    return '未抄录';
+  }
+  /* 去掉 demo 数据里夹带的判读式括号（深度缓解阈值断言），只留照抄值 */
+  function tfrNote(raw) {
+    var s = String(raw == null ? '' : raw).trim();
+    if (!s || s === '—') return '报告里尚未抄录该字段（待补）';
+    s = s.replace(/[（(]\s*未达[^）)]*[）)]/g, '').replace(/未满足/g, '').replace(/\s{2,}/g, ' ').trim();
+    return s;
+  }
+  function tfrConditionCell(row) {
+    var name = String((row && row[0]) || '');
+    var src = String((row && row[2]) || '').trim();
+    var has = src && src !== '—';
+    return esc(name) + '<span class="src">书面条件条目照抄自：' +
+      (has ? esc(tfrNote(src)) : '本档案尚未抄录该条件的书面原文（待补，本仓不代拟）') + '</span>';
+  }
+  function tfrStatusLabel(s) {
+    var m = /^([^（(]*)/.exec(String(s || ''));
+    var out = (m ? m[1] : String(s || '')).trim();
+    return out || '未开始核对';
+  }
+  function tfrStatusDetail(s) {
+    var str = String(s || '');
+    var quoted = /提过[：:]\s*([^）)]+)/.exec(str);
+    var date = (/(\d{4}-\d{2}-\d{2})/.exec(str) || [])[1] || '';
+    if (quoted) return '<p>' + q(quoted[1].trim(), '医生原话 · 血液科门诊 ' + (date || '门诊日期未记录')) + '</p>';
+    if (date) return '<p class="muted">照抄自本档案门诊记录（停药日 ' + esc(date) + '）<span class="src">来源：门诊记录原文 · 文件号见服药线「处方变更」凭据列</span></p>';
+    return '';
+  }
+
+  /* ================= P0-7：入口逐字 + 「⋯ 更多」收口 ================= */
+  /* 每页一个「⋯ 更多」收口；med / mol 的收口标题＝INTERACTION-DESIGN §二 的逐字入口
+     （S4「⋯ 更多→换药/调剂量了」/ S7「⋯ 更多→停药尝试准备」），点开即是手工通道 */
+  var MORE_CAPTION = { med: '⋯ 更多→换药/调剂量了', mol: '⋯ 更多→停药尝试准备' };
+  function moreBlock(page) {
+    var M = { dash: 1, mol: 1, med: 1, ae: 1, tfr: 1, cost: 1, fert: 1, prep: 1, docs: 1, trial: 1 }[page];
+    if (!M) return '';
+    var items = MORE_ITEMS[page] || [];
+    if (!items.length) return '';
+    return '<details class="more"><summary>' + esc(MORE_CAPTION[page] || '⋯ 更多') + '</summary><ul class="more-list">' +
+      items.map(function (it) { return '<li>' + it + '</li>'; }).join('') + '</ul>' +
+      '<p class="muted">手工入口收在「⋯ 更多」里：卡片上只留一个显式编辑动作（IP6）。</p></details>';
+  }
+  var MORE_ITEMS = {
+    dash: [
+      '<button type="button" class="btn btn-sm" data-act="mol-new">记一笔复查</button>',
+      '<a class="btn btn-sm" href="#docs">看原文（资料导入的候选）</a>',
+      '<a class="btn btn-sm" href="#trial">临床试验（M4 数据未接入）</a>',
+      '<a class="btn btn-sm" href="#mol/lab">复查记录 CML-LAB（血常规密测 / 骨髓原文）</a>'
+    ],
+    mol: [
+      '<button type="button" class="btn btn-sm" data-act="mol-manual">手工补一条复查记录（6 字段）</button>',
+      '<button type="button" class="btn btn-sm" data-act="mol-lab">复查记录 CML-LAB（血常规密测 / 骨髓原文）</button>',
+      '<button type="button" class="btn btn-sm" data-act="tfr-prep">停药尝试准备</button>',
+      '<a class="btn btn-sm" href="#docs">看原文（资料导入的候选）</a>'
+    ],
+    med: [
+      '<button type="button" class="btn btn-sm" data-act="rx-new">换药/调剂量了</button>',
+      '<a class="btn btn-sm" href="#med/checkin">改这一条（打卡更正）</a>'
+    ],
+    ae: [
+      '<button type="button" class="btn btn-sm" data-act="ae-new">记一次不舒服</button>',
+      '<a class="btn btn-sm" href="#docs">看原文（凭据文件）</a>',
+      '<a class="btn btn-sm" href="#med/rx">换药/调剂量了</a>'
+    ],
+    tfr: [
+      '<a class="btn btn-sm" href="#docs">看原文（门诊记录 / 报告文件）</a>',
+      '<button type="button" class="btn btn-sm" data-act="tfr-prep">停药尝试准备</button>'
+    ],
+    cost: [
+      '<button type="button" class="btn btn-sm" data-act="cost-new">记一笔</button>',
+      '<a class="btn btn-sm" href="#docs">看原文（费用票据 / 发票）</a>'
+    ],
+    fert: [
+      '<button type="button" class="btn btn-sm" data-act="fert-ask">我要问的</button>',
+      '<a class="btn btn-sm" href="#prep">把问题带进复诊资料包</a>'
+    ],
+    prep: [
+      '<a class="btn btn-sm" href="#docs">引用资料导入的候选</a>',
+      '<a class="btn btn-sm" href="#trial">临床研究核对字段</a>'
+    ],
+    docs: [
+      '<button type="button" class="btn btn-sm" data-act="docs-pick">看原文（选择文件）</button>',
+      '<a class="btn btn-sm" href="#prep">把候选带进复诊资料包</a>'
+    ],
+    trial: [
+      '<a class="btn btn-sm" href="#mol">去分子线看趋势</a>',
+      '<a class="btn btn-sm" href="#docs">去资料导入核对原文</a>'
+    ]
+  };
+
+  /* ================= S6：里程碑角标 → 词义 + 来源版本 ================= */
+  var GLOSS = [
+    ['IS%', '国际标准化（International Scale）的 BCR::ABL1 百分比口径，是报告原文使用的单位；本仓不做任何 IS / 非 IS 换算判读。', 'GL-CN-2025 · 报告原文单位'],
+    ['MMR', '主要分子学缓解：BCR::ABL1 IS ≤0.1%，需同一实验室、IS 标化可比（口径照抄指南原文）。', 'GL-CN-2025'],
+    ['MR4', '4 log 深度缓解：BCR::ABL1 IS ≤0.01% 且灵敏度足够（口径照抄指南原文）。', 'GL-CN-2025'],
+    ['MR4.5', '4.5 log 深度缓解：BCR::ABL1 IS ≤0.0032% 且灵敏度达 MR4.5（口径照抄指南原文）。', 'GL-CN-2025'],
+    ['CMR / DMR', '完全分子学缓解：BCR::ABL1 IS ≤0.01%（MR3 以下）口径按指南原文。', 'GL-CN-2025']
+  ];
+  function glossCard(key) {
+    var row = null;
+    GLOSS.forEach(function (g) { if (g[0] === key) row = g; });
+    if (!row) return '';
+    return '<section class="card gloss-card" id="glossCard"><div class="card-head"><h4 class="h3">词表卡：' + esc(row[0]) + '</h4>' +
+      badge('零判读') + '</div><p>词义：' + esc(row[1]) + '</p>' +
+      '<p>来源版本：' + esc(row[2]) + '</p>' +
+      '<p class="note">词表只给词义与来源版本，不做「是否达到」的判读。</p></section>';
   }
 
   /* ================= 图表：Fritsch–Carlson 单调三次插值 ================= */
@@ -403,17 +634,74 @@
     };
     return map[page] || '';
   }
+  /* ================= P0-6：复诊资料包 = 事实区 / 看法区 / 问题清单（同一个数组算计数） ================= */
+  function prepRangeLabel() {
+    return { 'range-3m': '近 3 个月', 'range-6m': '近 6 个月', all: '全部' }[state.prepRange] || state.prepRange;
+  }
+  function prepInRange(iso) {
+    var months = { 'range-3m': 3, 'range-6m': 6, all: 0 }[state.prepRange] || 0;
+    if (!months) return true;
+    return t(iso) >= t(TODAY) - months * 30.44 * 24 * 3600 * 1000;
+  }
+  function prepBundle() {
+    var p = profile(), facts = [], views = [], questions = [];
+    var rec = recorderDefault();
+    (metricByKey('pcr') || { points: [] }).points.filter(function (pt) { return prepInRange(pt.d); }).forEach(function (pt) {
+      facts.push({
+        id: 'pcr-' + pt.d, section: 'facts', visibility: 'shared', recorder: pt.recorder || rec,
+        text: pt.d + ' BCR::ABL1 ' + num(pt.v, 3) + '%（' + (pt.lab || '未记录') + ' · IS 标化 ' +
+          (pt.is_std === 1 ? '是' : '未记录') + ' · ' + (pt.sens || '未记录') + '）' +
+          (pt.local ? ' · 本机新增（' + MEM_NOTICE + '）' : '')
+      });
+    });
+    var cbcDates = ((metricByKey('wbc') || { points: [] }).points || []).map(function (x) { return x.d; })
+      .filter(prepInRange).slice(-3);
+    cbcDates.forEach(function (d) {
+      var g = function (k) {
+        var m = metricByKey(k), v = '未记录';
+        ((m && m.points) || []).forEach(function (x) { if (x.d === d) v = x.v; });
+        return v;
+      };
+      facts.push({
+        id: 'cbc-' + d, section: 'facts', visibility: 'shared', recorder: rec,
+        text: d + ' 血常规 白细胞 ' + g('wbc') + ' 10⁹/L · 中性粒细胞 ' + g('anc') + ' 10⁹/L · 血红蛋白 ' +
+          g('hgb') + ' g/L · 血小板 ' + g('plt') + ' 10⁹/L'
+      });
+    });
+    (p.viewpoints || []).forEach(function (v, i) {
+      /* B 档案 2026-05-20 那条含患者原话敏感词：只在分子线折叠卡内以带来源引用出现，不进资料包 */
+      if (state.profile === 'B' && v[0] === '2026-05-20') return;
+      if (!prepInRange(v[0])) return;
+      views.push({
+        id: 'vp-' + i, section: 'views', visibility: 'shared', recorder: rec,
+        text: v[0] + ' ' + v[1] + '：' + v[2],
+        source: v[0] + (state.profile === 'B' ? '（患者原话 · 家属代记）' : '（本人记录）')
+      });
+    });
+    questions.push({ id: 'q1', section: 'questions', visibility: 'shared', recorder: rec, text: '下次复查的时间和项目是什么？' });
+    questions.push({
+      id: 'q2', section: 'questions', visibility: 'shared', recorder: rec,
+      text: '长期服药对身体的其它影响、能不能减量，我要怎么问才说清楚？',
+      source: '生育计划资料夹（要点照抄，已去识别）'
+    });
+    var all = facts.concat(views).concat(questions).concat(sensitiveRecords().map(function (r) {
+      return { id: r.id, section: 'private', visibility: r.visibility, recorder: r.recorder, text: r.text };
+    }));
+    return { facts: facts, views: views, questions: questions, all: all };
+  }
   function recordsForPage(page) {
     var p = profile(), out = [];
     if (page === 'dash' || page === 'mol') {
       (metricByKey('pcr') || { points: [] }).points.forEach(function (pt) {
-        out.push({ id: 'pcr-' + pt.d, visibility: 'shared', text: pt.d + ' BCR::ABL1 ' + pt.v + '%（' + (pt.lab || '实验室未记录') + '，灵敏度 ' + (pt.sens || '未记录') + '）' });
+        out.push({ id: 'pcr-' + pt.d, visibility: 'shared', recorder: pt.recorder || recorderDefault(),
+          text: pt.d + ' BCR::ABL1 ' + pt.v + '%（' + (pt.lab || '实验室未记录') + '，灵敏度 ' + (pt.sens || '未记录') + '）' });
       });
     }
-    if (page === 'ae') aeRows().forEach(function (r) { out.push({ id: r.id, visibility: r.visibility, text: r.d + ' ' + r.name + ' · ' + r.drug + ' · ' + r.desc }); });
-    if (page === 'prep' || page === 'cost') (p.cost || []).forEach(function (c, i) { out.push({ id: 'cost-' + i, visibility: 'shared', text: c[0] + ' ' + c[1] + ' 自费 ' + c[2] + ' 元 · ' + c[4] }); });
+    if (page === 'ae') aeRows().forEach(function (r) { out.push({ id: r.id, visibility: r.visibility, recorder: r.recorder, text: r.d + ' ' + r.name + ' · ' + r.drug + ' · ' + r.desc }); });
+    if (page === 'cost') costRows().forEach(function (c, i) { out.push({ id: 'cost-' + i, visibility: 'shared', recorder: c.recorder, text: c.m + ' ' + c.drug + ' 自费 ' + (c.amt * c.qty) + ' 元 · ' + c.note }); });
     if (page === 'fert') fertilityRows().forEach(function (r) { out.push(r); });
-    return out.concat(sensitiveRecords().filter(function (r) { return page === 'prep' || page === 'ae' || page === 'dash'; }));
+    if (page === 'prep') return prepBundle().all;
+    return out.concat(sensitiveRecords().filter(function (r) { return page === 'ae' || page === 'dash'; }));
   }
   function buildAiContext(page) {
     var range = { dash: '最近 3 次复查', mol: state.molRange, ae: '全部已记录条目', prep: state.prepRange, cost: '2026-01 → 2026-10' }[page] || '本页全部';
@@ -530,7 +818,7 @@
           regimen: { summary: '伊马替尼 400 mg · 每日 1 次 · 2020-03-15 → 2021-06-30', items: [['药名 / 剂量', '伊马替尼 400 mg'], ['频次', '每日 1 次'], ['起止', '2020-03-15 → 2021-06-30'], ['变更原因原文', q('先减量，仍不耐受就换药', '医生原话 · 血液科门诊 2021-05-08')], ['凭据', '骨髓 + 融合基因报告 2020-03-11（文件 B-D1）、门诊病历 2021-06-30（文件 B-D2）']] },
           metrics: { summary: '本阶段原始报告为 2020-03-11 骨髓与融合基因；qPCR 逐点抄录见分子线页', items: [['转录本', 'e13a2（典型）· RT-PCR 2020-03-11'], ['染色体', 'Ph+（t9;22）· 骨髓细胞遗传学 2020-03-11'], ['BCR::ABL1（IS%）', '本原型数据集中该阶段无逐点 qPCR 抄录值']] },
           imaging: { summary: '无 · 说明：本阶段未做影像检查', items: [['影像报告', '无'], ['说明', '确诊依据为骨髓 + 融合基因报告（B-D1）']] },
-          ae: { summary: '1 条：皮疹 / 腹泻（处理原文已引）', items: [['2021-05-08 皮疹 / 腹泻', '自述原文：' + q('前臂皮疹，大便每天 3–4 次', '本人自述 · 家属代记')], ['处理原文', q('先减量，仍不耐受就换药', '医生原话 · 血液科门诊 2021-05-08')], ['凭据', '门诊病历 2021-06-30（文件 B-D2）']] },
+          ae: { summary: '1 条：皮疹 / 腹泻（处理原文已引）', items: [['2021-05-08 皮疹 / 腹泻', '患者原话：' + q('前臂皮疹，大便每天 3–4 次', '家属代记（患者原话）')], ['处理原文', q('先减量，仍不耐受就换药', '医生原话 · 血液科门诊 2021-05-08')], ['凭据', '门诊病历 2021-06-30（文件 B-D2）']] },
           support: { summary: '无措施记录 · 说明：该阶段未记录心理与营养措施', items: [['措施', '无'], ['效果（本人原话）', '该阶段无记录'], ['说明', '无内容即写「无 + 说明」，不省略块']] }
         }
       },
@@ -540,8 +828,8 @@
           regimen: { summary: '尼洛替尼 300 mg · 每日 2 次 · 2021-07-01 → 2026-04-09', items: [['药名 / 剂量', '尼洛替尼 300 mg'], ['频次', '每日 2 次（bid，空腹早晚各一次）'], ['起止', '2021-07-01 → 2026-04-09'], ['变更原因原文', q('伊马替尼皮疹腹泻不耐受，换尼洛替尼，空腹早晚各一次', '医生原话 · 血液科门诊 2021-06-30')], ['凭据', '门诊病历 2021-06-30（文件 B-D2）']] },
           metrics: { summary: '2026-04-09 停药前最后 1 次 BCR::ABL1 IS 0.0028%', items: [['BCR::ABL1（IS%）', '2026-04-09：0.0028%（市一院血液科 · IS 标化 · MR4.5）'], ['DMR 持续时长', '门诊记录 2026-04-09 记有「DMR 超过 2 年」（照抄门诊记录）'], ['趋势一句话', '逐点抄录；本页不连线判读，分段见分子线页']] },
           imaging: { summary: '无 · 说明：本阶段未做影像检查', items: [['影像报告', '无'], ['说明', '本阶段文件为肝功能与门诊记录（B-D4、B-D5）']] },
-          ae: { summary: '1 条：与肝功能相关的记录（报告原文已加引号照抄）', items: [['2025-11-20 报告原文', q('肝功能异常（ALT 升高）', '肝功能 2025-11-20.pdf 报告原文 · 文件 B-D4')], ['自述原文', q('ALT 62，没有不舒服', '本人自述 · 家属代记')], ['处理原文', q('尼洛替尼可能影响肝酶，加查一次', '医生原话 · 血液科门诊 2025-11-20')], ['等级', '报告未给等级字段（本页不代拟等级）']] },
-          support: { summary: '1 条家属记录', items: [['措施', '每天早晚各一次服药（尼洛替尼需空腹）；不催她看报告（家属自述）'], ['效果（家属原话）', q('报告我先拍，等她愿意谈了再一起看；不催她', '家属记录')], ['说明', '效果只照抄记录原话，不评疗效']] }
+          ae: { summary: '1 条：与肝功能相关的记录（报告原文已加引号照抄）', items: [['2025-11-20 报告原文', q('肝功能异常（ALT 升高）', '肝功能 2025-11-20.pdf 报告原文 · 文件 B-D4')], ['患者原话', q('ALT 62，没有不舒服', '家属代记（患者原话）')], ['处理原文', q('尼洛替尼可能影响肝酶，加查一次', '医生原话 · 血液科门诊 2025-11-20')], ['等级', '报告未给等级字段（本页不代拟等级）']] },
+          support: { summary: '1 条家属记录', items: [['措施', '每天早晚各一次服药（尼洛替尼需空腹）；不催她看报告（家属自述）'], ['效果（家属代记原话）', q('报告我先拍，等她愿意谈了再一起看；不催她', '家属记录')], ['说明', '效果只照抄记录原话，不评疗效']] }
         }
       },
       {
@@ -550,8 +838,8 @@
           regimen: { summary: '停药观察（无每日 TKI）· 2026-04-10 起', items: [['药名 / 剂量', '（停药观察）· —'], ['频次', '无每日服药（none）'], ['起止', '2026-04-10 起'], ['门诊记录原文', q('DMR 超过 2 年、TKI 用了 6 年，达到书面条件，可以谈停药；停药后前半年每 1–2 个月抽一次', '医生原话 · 血液科门诊 2026-04-09')], ['凭据', 'TFR 评估门诊记录 2026-04-09（文件 B-D5）']] },
           metrics: { summary: '停药后 6 次 qPCR 逐点抄录：0.0028 → 0.0021（IS%）', items: [['BCR::ABL1（IS%）', '2026-04-09：0.0028% → 2026-10-08：0.0021%（市一院血液科 · IS 标化 · MR4.5）'], ['血常规（白细胞 10⁹/L）', '2026-04-09：5.6 → 2026-10-08：4.8'], ['趋势一句话', '逐点抄录，连线与分段见分子线页；本页不判读']] },
           imaging: { summary: '无 · 说明：停药密测期未做影像检查', items: [['影像报告', '无'], ['说明', '本阶段文件为 qPCR 与血常规报告（B-D3、B-D6）']] },
-          ae: { summary: '2 条停药相关记录（与停药日对齐）', items: [['2026-05-02 肌肉骨骼疼痛', '自述原文：' + q('停药后腰背和膝盖酸，早上明显', '本人自述 · 家属代记')], ['2026-06-11 皮肤瘙痒', '自述原文：' + q('晚上痒，抓了会起红印', '本人自述 · 家属代记')], ['处理原文', q('停药综合征，多数几个月会缓解；影响生活可以来门诊', '医生原话 · 血液科门诊 2026-05-08')], ['对齐', '两条均与停药日 2026-04-10 对齐显示（见副作用日志页）']] },
-          support: { summary: '3 条本人记录（含停药初期）', items: [['措施', '停药后散步、瑜伽，避免熬夜（本人自述）'], ['效果（本人原话）', q('好一点：两次报告都稳定，妈妈也不天天问了', '本人记录 2026-07-15') + '<br>' + q('还行：就是等报告那三天难熬', '本人记录 2026-10-08') + '<br>' + q('紧张：停药第一周总觉得自己会复发，半夜会醒', '本人记录 2026-05-20')], ['口径', '患者自述原话按来源照抄；「会不会复发」是本人的担心，不是本页结论——本页不做判读（K1）']] }
+          ae: { summary: '2 条停药相关记录（与停药日对齐）', items: [['2026-05-02 肌肉骨骼疼痛', '患者原话：' + q('停药后腰背和膝盖酸，早上明显', '家属代记（患者原话）')], ['2026-06-11 皮肤瘙痒', '患者原话：' + q('晚上痒，抓了会起红印', '家属代记（患者原话）')], ['处理原文', q('停药综合征，多数几个月会缓解；影响生活可以来门诊', '医生原话 · 血液科门诊 2026-05-08')], ['对齐', '两条均与停药日 2026-04-10 对齐显示（见副作用日志页）']] },
+          support: { summary: '3 条患者原话记录（家属代记，含停药初期）', items: [['措施', '停药后散步、瑜伽，避免熬夜（患者原话 · 家属代记）'], ['效果（本人原话）', q('好一点：两次报告都稳定，妈妈也不天天问了', '患者原话 · 家属代记 2026-07-15') + '<br>' + q('还行：就是等报告那三天难熬', '患者原话 · 家属代记 2026-10-08') + '<br>' + q('紧张：停药第一周总觉得自己会复发，半夜会醒', '患者原话 · 家属代记 2026-05-20')], ['口径', '患者原话按来源照抄（记录者为家属代记）；患者的担心原样保留在引号内，不是本页结论——本页不做判读（K1）']] }
         }
       }
     ];
@@ -568,16 +856,18 @@
     var pcrMetric = metricByKey('pcr') || null;
 
     var h = '<div class="page-head"><h1>看板</h1>' +
-      badge('档案 ' + state.profile) + badge(authorRole()) + badge('构建 ' + BUILD) + badge(VERSION) + '</div>';
+      badge('档案 ' + state.profile + ' · ' + authorView()) + badge('记录者随条目标注') + badge('构建 ' + BUILD) + badge(VERSION) + '</div>' +
+      '<p class="muted mem-notice" id="memNotice">' + MEM_NOTICE + '；本机写入只改变当前页面状态。</p>';
 
     h += '<div class="grid">';
 
     /* 档案头 */
     h += '<section class="card"><div class="card-head"><h3>档案</h3>' + badge(p.phase || '') + badge('转录本 ' + (p.transcript || '未记录')) + '</div>' +
       kvTable([['姓名', esc(p.name || '')], ['性别 / 年龄', esc((p.sex || '') + ' / ' + (p.age || '') + ' 岁')], ['概况', esc(p.meta || '')],
-        ['医生告知的分层', esc(p.risk || '')], ['一句话病史', esc(p.headline || '')], ['本人最在意的', esc(p.mindset || '')]]) + '</section>';
+        ['医生告知的分层', esc(p.risk || '')], ['一句话病史', esc(p.headline || '')], ['本人最在意的', esc(p.mindset || '')],
+        ['本页记录者', esc(recorderDefault())]]) + '</section>';
 
-    /* 今日服药卡 */
+    /* 今日服药卡（S2 入口逐字：「今天吃了吗」） */
     var todayState = state.checkin;
     h += '<section class="card"><div class="card-head"><h3>今日服药卡</h3>' + badge(currentDrugLabel()) + badge('本机打卡') + '</div>';
     if (currentDrugKey() === 'none') {
@@ -590,30 +880,34 @@
     }
     if (state.writeFail) h += '<p class="err" id="writeErr">本地写失败：请重试（输入未丢失，草稿仍在本页）。</p>';
     h += '<div class="row">' +
+      '<button type="button" class="btn" data-act="today-taken">今天吃了吗</button>' +
       '<button type="button" class="btn" data-act="checkin" data-v="taken">一键已服</button>' +
       '<button type="button" class="btn" data-act="checkin" data-v="missed">标记漏服</button>' +
       '<button type="button" class="btn btn-sm" data-act="write-fail">模拟本地写失败</button>' +
       '<a class="btn" href="#med">去服药线</a></div>';
     h += '<h4 class="h3">最近 3 天</h4><ul class="timeline">' + recent.map(function (r) {
-      return '<li><span class="t-date">' + esc(r[0]) + '</span><div>' + (r[1] === 'taken' ? '已服' : (r[1] === 'missed' ? '漏服' : '无每日服药（停药期）')) + '</div></li>';
+      return '<li><span class="t-date">' + esc(r[0]) + '</span><div>' + (r[1] === 'taken' ? '已服' : (r[1] === 'missed' ? '漏服' : '无每日服药（停药期）')) +
+        ' ' + recBadge(null) + '</div></li>';
     }).join('') + '</ul>';
     h += '<p class="muted">漏服不评判；补服分支规则与来源见服药线「今日打卡」。</p></section>';
 
-    /* 分子线速览卡 */
+    /* 分子线速览卡（S1 入口逐字：「记一笔复查」） */
     var next = (p.rhythm || [])[1] || (p.rhythm || [])[0] || null;
     h += '<section class="card"><div class="card-head"><h3>分子线速览（最近 3 点）</h3>' + badge('距下次复查' + (next ? ' 约 ' + (monthsUntil(next[3]) == null ? '—' : monthsUntil(next[3]) + ' 个月') : ' —')) + '</div>';
     if (!last3.length) {
-      h += '<p class="empty">还没有分子结果，先记一笔复查。<a href="#mol">去分子线录入</a></p>';
+      h += '<p class="empty">还没有分子结果，先记一笔复查。</p>';
     } else {
       h += dataTable(['日期', 'BCR::ABL1（IS%）', '实验室', 'IS 标化', '灵敏度'], last3.map(function (pt) {
-        return [esc(pt.d), esc(num(pt.v, 3)), esc(pt.lab || '未记录'), pt.is_std === 1 ? '是' : (pt.is_std === 0 ? '否' : '未记录'), esc(pt.sens || '未记录')];
+        return [esc(pt.d), esc(num(pt.v, 3)) + (pt.local ? ' ' + badge('本机新增') : ''), esc(pt.lab || '未记录'), pt.is_std === 1 ? '是' : (pt.is_std === 0 ? '否' : '未记录'), esc(pt.sens || '未记录')];
       }));
       h += '<div class="chart-wrap">' + chartSVG(pcrMetric, { points: last3, milestones: false, legend: false }) + '</div>';
       h += '<p class="muted">四要素（单位 / 实验室 / IS 标化 / 灵敏度）在分子线页逐点列出；相邻点不可比时断开折线。</p>';
     }
+    h += '<div class="row"><button type="button" class="btn" data-act="mol-new">记一笔复查</button>' +
+      '<a class="btn" href="#mol">去分子线</a></div>';
     h += '<p class="muted">下次复查安排：' + esc(next ? next[0] + ' · ' + next[1] + ' · ' + next[3] : '未记录') + '（医生安排，仅照抄）</p></section>';
 
-    /* 副作用速记卡（按当前用药过滤） */
+    /* 副作用速记卡（S3 入口逐字：「记一次不舒服」） */
     var filtered = aeRows().filter(function (r) {
       return lexiconKeys().indexOf(r.drug) >= 0 || r.example;
     });
@@ -622,14 +916,33 @@
     if (!filtered.length) h += '<p class="empty">词表引导：先选一种不适（按当前用药列出），再补日期与自述。</p>';
     else h += '<ul class="timeline">' + filtered.slice(0, 3).map(function (r) {
       return '<li><span class="t-date">' + esc(r.d) + '</span><div>' + esc(r.name) + ' ' + badge(r.drug) +
-        (r.visibility === 'private' ? badge('私密') : '') + '<span class="src">' + esc(r.desc) + '</span></div></li>';
+        ' ' + recBadge(r.recorder) + (r.visibility === 'private' ? badge('私密') : '') +
+        '<span class="src">' + esc(r.desc) + '</span></div></li>';
     }).join('') + '</ul>';
-    h += '<p class="muted">只记录不适与处理原文，不出现严重度判读列。<a href="#ae">去副作用日志</a></p></section>';
+    h += '<div class="row"><button type="button" class="btn" data-act="ae-new">记一次不舒服</button>' +
+      '<a class="btn" href="#ae">去副作用日志</a></div>';
+    h += '<p class="muted">只记录不适与处理原文，不出现严重度判读列。</p></section>';
 
-    /* 复诊倒计时卡 */
+    /* 费用速记卡（S8 入口逐字：「记一笔」） */
+    var rowsC = costRows(), monthAgg = {}, totalC = 0;
+    rowsC.forEach(function (c) {
+      var amt = Number(c.amt || 0) * Number(c.qty == null ? 1 : c.qty);
+      monthAgg[c.m] = (monthAgg[c.m] || 0) + amt;
+      totalC += amt;
+    });
+    var lastMonth = Object.keys(monthAgg).sort().pop() || '—';
+    h += '<section class="card"><div class="card-head"><h3>费用速记（按月 × 按药）</h3>' + badge('不跨药混算') + badge('本机新增 ' + (ex().cost || []).length + ' 笔') + '</div>' +
+      kvTable([['最近一月（' + esc(lastMonth) + '）自费合计', '<span id="dashCostMonth">' + monthAgg[lastMonth] + '</span> 元'],
+        ['全部月份自费合计', '<span id="dashCostTotal">' + totalC + '</span> 元'],
+        ['已记条目数', '<span id="dashCostCount">' + rowsC.length + '</span> 条']]) +
+      '<p class="muted">只照抄票据金额，不做省不省钱判断。</p>' +
+      '<div class="row"><button type="button" class="btn" data-act="cost-new">记一笔</button>' +
+      '<a class="btn" href="#cost">去费用记录</a></div></section>';
+
+    /* 复诊倒计时卡（S5 入口逐字：「准备复诊」） */
     h += '<section class="card"><div class="card-head"><h3>复诊倒计时</h3>' + badge(TODAY) + '</div>' +
-      dataTable(['事项', '频率', '依据', '下次时间'], (p.rhythm || []).map(function (r) {
-        return [esc(r[0]), esc(r[1]), esc(r[2]), esc(r[3])];
+      dataTable(['事项', '频率 / 书面口径原文', '依据', '下次时间'], (p.rhythm || []).map(function (r) {
+        return [esc(r[0]), rhythmCell(r), esc(r[2]), esc(r[3])];
       })) +
       '<div class="row"><a class="btn" href="#prep">准备复诊（生成资料包与问题清单）</a>' + aiButton('prep', '复诊准备：整理资料包大纲') + '</div></section>';
 
@@ -646,7 +959,21 @@
     h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>本页 AI 协助</h3></div>' +
       '<p class="muted">点击后派发 <code>cml:agent-draft</code>，提示词只进会话区输入框，不自动发送。</p>' +
       '<div class="row">' + aiButton('dash') + '<a class="btn" href="#mol">分子线</a><a class="btn" href="#tfr">TFR 档案</a><a class="btn" href="#docs">资料导入</a></div></section>';
+
+    /* P0-4 / P0-8：全站「⋯ 更多」收口；docs / trial 在场景路径上可达 */
+    h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>手工入口与通道</h3></div>' +
+      moreBlock('dash') +
+      '<p class="muted">资料导入（候选 → 核对）与临床试验（M4 数据未接入）从本卡「⋯ 更多」和「准备复诊」路径进入。</p></section>';
     return h;
+  }
+
+  /* 看板复诊倒计时：出现处置方向的「书面口径」行一律进 <q class="quote"> + 来源 */
+  function rhythmCell(r) {
+    var txt = String((r && r[1]) || '');
+    if (/丧失|恢复\s*TKI|复发|停药/.test(txt + String((r && r[0]) || ''))) {
+      return q(txt, String((r && r[2]) || '未记录') + ' · 照抄原文，本页不给处置方向');
+    }
+    return esc(txt) + '<span class="src">来源：' + esc(String((r && r[2]) || '未记录')) + '（照抄）</span>';
   }
 
   function HVT11() {
@@ -671,11 +998,63 @@
   }
 
   function pageMol() {
+    var tabs = [['trend', '趋势与词表'], ['lab', '复查记录 CML-LAB（二级）']];
+    var h = '<div class="page-head"><h1>分子线</h1>' + badge('档案 ' + state.profile + ' · ' + authorView()) +
+      badge('图谱 CML-MOL') + badge('记录者随条目标注') + '</div>';
+    h += '<div class="tabs" role="tablist">' + tabs.map(function (tb) {
+      return '<button type="button" class="tab" role="tab" aria-selected="' + (state.molTab === tb[0]) + '" data-act="mol-tab" data-v="' + tb[0] + '">' + esc(tb[1]) + '</button>';
+    }).join('') + '</div>';
+    if (state.molTab === 'lab') return h + molLabBody();
+    return h + molTrendBody();
+  }
+
+  /* 分子线 · 复查记录 CML-LAB（二级页，UI-DESIGN:37-39 / HVT-06） */
+  function molLabBody() {
+    var p = profile();
+    var keys = [['wbc', '白细胞', '10⁹/L'], ['anc', '中性粒细胞', '10⁹/L'], ['hgb', '血红蛋白', 'g/L'], ['plt', '血小板', '10⁹/L']];
+    var dates = ((metricByKey('wbc') || { points: [] }).points || []).map(function (x) { return x.d; });
+    var firstT = dates.length ? t(dates[0]) : 0;
+    var val = function (k, d) {
+      var m = metricByKey(k), v = '未记录';
+      ((m && m.points) || []).forEach(function (x) { if (x.d === d) v = x.v; });
+      return v;
+    };
+    var h = '<p class="muted mem-notice">' + MEM_NOTICE + '。</p>';
+    h += '<section class="card"><div class="card-head"><h3>血常规密测轨道（HVT-06）</h3>' +
+      badge('前 2 个月每 1–2 周（照抄书面口径）') + badge('共 ' + dates.length + ' 次') + '</div>' +
+      '<p class="note">书面口径（照抄）：治疗前 2 个月每 1–2 周复查血常规；之后按门诊安排。来源：中国 CML 诊疗指南（2025 版）· 血液学监测章节 · GL-CN-2025。</p>' +
+      '<div class="track">' + dates.map(function (d) {
+        var dense = (t(d) - firstT) <= 62 * 24 * 3600 * 1000;
+        return '<span class="track-cell' + (dense ? ' track-dense' : '') + '" title="' + esc(d) + '">' + esc(d.slice(5)) + '</span>';
+      }).join('') + '</div>' +
+      '<p class="muted">实心格＝前 2 个月密测段（每 1–2 周）；空心格＝门诊常规频次。每格日期与数值均照抄报告，不做判读。</p>' +
+      dataTable(['日期', '白细胞（10⁹/L）', '中性粒细胞（10⁹/L）', '血红蛋白（g/L）', '血小板（10⁹/L）', '与上次间隔（天）', '来源'],
+        dates.map(function (d, i) {
+          var gap = i === 0 ? '—' : Math.round((t(d) - t(dates[i - 1])) / (24 * 3600 * 1000));
+          return [esc(d), esc(String(val('wbc', d))), esc(String(val('anc', d))), esc(String(val('hgb', d))), esc(String(val('plt', d))),
+            esc(String(gap)), '血常规报告原文 · 记录者：' + esc(recorderDefault())];
+        })) + '</section>';
+
+    var mol = p.molecular || [];
+    var rows = mol.filter(function (m) { return /转录本|染色体/.test(String(m.k)); }).map(function (m) {
+      return [esc(m.k), q(m.v, m.src), esc(m.note || '—'), esc(recorderDefault())];
+    });
+    h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>骨髓 / 细胞遗传学（原文摘录）</h3>' + badge('原文照抄') + '</div>' +
+      (rows.length ? dataTable(['项目', '报告原文摘录', '报告字段（照抄）', '记录者'], rows) :
+        '<p class="empty">本档案尚无骨髓 / 细胞遗传学原文摘录。</p>') +
+      '<p class="note">骨髓与细胞遗传学的结论原文如未逐字核对入库，就写「待逐字核对入库」；本页不代拟结论、不做判读。</p>' +
+      '<p class="muted">来源文件：' + esc(((p.docs || [])[0] || ['—'])[0]) + ' · ' + esc(((p.docs || [])[0] || ['—', '未记录'])[1]) + '</p>' +
+      '<div class="row"><button type="button" class="btn" data-act="mol-manual">记一笔复查（血常规 / 骨髓）</button>' +
+      '<a class="btn" href="#docs">去资料导入看原文</a></div></section>';
+    h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>手工入口</h3></div>' + moreBlock('mol') + '</section>';
+    return h;
+  }
+
+  function molTrendBody() {
     var p = profile();
     var ms = metrics();
     var sel = state.molKeys.slice(0, 4);
-    var h = '<div class="page-head"><h1>分子线</h1>' + badge('档案 ' + state.profile) + badge(authorRole()) +
-      badge('图谱 CML-MOL') + '</div>';
+    var h = '<p class="muted mem-notice" id="memNotice">' + MEM_NOTICE + '。</p>';
 
     /* 状态演示（按 UI-DESIGN §四：加载/空态/单条/错误） */
     h += '<section class="card"><div class="card-head"><h3>状态与缩放</h3></div>' +
@@ -701,6 +1080,15 @@
     /* 趋势图 rail */
     h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>趋势</h3>' + badge('SVG class="chart"') +
       badge('Fritsch–Carlson 单调三次插值') + '</div>';
+    /* S6 入口逐字：趋势页任意「IS%」「MMR」角标 → 点开词表卡（词义 + 来源版本） */
+    h += '<div class="row" id="glossRow"><span class="muted">里程碑角标（点开看词义与来源版本）：</span>' +
+      GLOSS.map(function (g) {
+        return '<button type="button" class="badge badge-btn" data-act="gloss" data-v="' + esc(g[0]) + '" aria-pressed="' +
+          (state.gloss === g[0]) + '">' + esc(g[0]) + '</button>';
+      }).join('') +
+      '<a class="btn btn-sm" href="#trial">临床研究核对字段</a>' +
+      '<a class="btn btn-sm" href="#docs">资料导入（候选 → 核对）</a></div>';
+    if (state.gloss) h += glossCard(state.gloss);
     if (state.molState === 'empty') {
       h += '<p class="empty">还没有分子结果，先记一笔复查。</p><div class="row"><button type="button" class="btn" data-act="mol-manual">手工录入一条</button></div>';
     }
@@ -731,10 +1119,11 @@
     /* 可比性四要素 */
     var pcr = metricByKey('pcr') || { points: [] };
     h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>实验室与可比性（HVT-07 四要素）</h3>' + badge('unit / lab / is_std / sens') + '</div>' +
-      dataTable(['日期', '值', '单位 unit', '实验室 lab', 'IS 标化 is_std', '灵敏度 sens', '来源'],
+      dataTable(['日期', '值', '单位 unit', '实验室 lab', 'IS 标化 is_std', '灵敏度 sens', '来源', '记录者'],
         pcr.points.map(function (pt) {
           return [esc(pt.d), esc(num(pt.v, 3)), esc(pt.unit || '未记录'), esc(pt.lab || '未记录'),
-            pt.is_std === 1 ? '是' : (pt.is_std === 0 ? '否' : '未记录'), esc(pt.sens || '未记录'), esc(pt.src || '未记录')];
+            pt.is_std === 1 ? '是' : (pt.is_std === 0 ? '否' : '未记录'), esc(pt.sens || '未记录'), esc(pt.src || '未记录'),
+            recBadge(pt.recorder)];
         })) +
       '<p class="note">相邻两点「实验室不同」或「IS 标化不为 1」→ 图上断开折线并标注「不可比（实验室/标化不同）」。任一要素缺失时显示「未记录」。</p>' +
       '<div class="row"><button type="button" class="btn btn-sm" data-act="mol-demo" data-v="' + (state.molDemo === 'incomparable' ? 'plain' : 'incomparable') + '" aria-pressed="' + (state.molDemo === 'incomparable') + '">可比性演示：把最近一点按「外院 / 未 IS 标化」渲染</button><span class="muted">仅视图层演示，不改动 demo-data.js</span></div></section>';
@@ -756,23 +1145,38 @@
           ['MR5', '5 log 深度缓解', 'BCR::ABL1 IS ≤0.001%（需实验室支持）', 'GL-CN-2025']]) +
       '<p class="note">词表只给词义与来源版本，不做「是否达到」的判读。</p></section>';
 
-    /* 复查记录（二级：录入 / 更正） */
-    h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>复查记录（二级：录入 / 更正）</h3>' + badge('显式编辑 ≤1/页') + '</div>';
+    /* 复查记录（二级：录入 / 更正）——P0-5：保存真的写入本机内存态并让趋势图新增点 */
+    h += '<section class="card" id="molFormCard" style="margin-top:12px"><div class="card-head"><h3>复查记录（二级：录入 / 更正）</h3>' +
+      badge('显式编辑 ≤1/页') + badge('记录者：' + recorderDefault()) + '</div>' +
+      '<p class="muted mem-notice">' + MEM_NOTICE + '：保存后趋势图会新增 1 个点、分子记录 +1；刷新即回到演示数据。</p>';
+    var w = lastWrite('mol');
+    if (w && w.profile === state.profile) h += '<p class="ok" id="molWriteMsg">' + esc(w.text) + '</p>';
     if (state.molDraft) {
-      h += '<p class="err">草稿已保留（未提交）：' + esc(state.molDraft.d + ' ' + state.molDraft.v + ' ' + state.molDraft.unit) + '</p>';
+      h += '<p class="err" id="molDraftMsg">草稿已保留（未提交）：' + esc(state.molDraft.d + ' ' + state.molDraft.v + ' ' + state.molDraft.unit) + '</p>';
     }
+    var md = draft().mol || state.molDraft || null;
     h += '<div class="grid">' +
-      '<div><label class="field-label" for="f-d">日期</label><input id="f-d" type="text" value="' + esc(state.molDraft ? state.molDraft.d : TODAY) + '"></div>' +
-      '<div><label class="field-label" for="f-v">BCR::ABL1（IS%）</label><input id="f-v" inputmode="decimal" type="text" value="' + esc(state.molDraft ? state.molDraft.v : '') + '"></div>' +
-      '<div><label class="field-label" for="f-lab">实验室 lab</label><input id="f-lab" type="text" value="' + esc(state.molDraft ? state.molDraft.lab : '') + '"></div>' +
-      '<div><label class="field-label" for="f-std">IS 标化 is_std（1=是 / 0=否）</label><input id="f-std" inputmode="decimal" type="text" value="' + esc(state.molDraft ? state.molDraft.is_std : '1') + '"></div>' +
-      '<div><label class="field-label" for="f-sens">灵敏度 sens</label><input id="f-sens" type="text" value="' + esc(state.molDraft ? state.molDraft.sens : 'MR4.5') + '"></div>' +
-      '<div><label class="field-label" for="f-unit">单位 unit</label><input id="f-unit" type="text" value="' + esc(state.molDraft ? state.molDraft.unit : 'IS%') + '"></div>' +
+      '<div><label class="field-label" for="f-d">日期</label><input id="f-d" type="text" value="' + esc(md ? md.d : TODAY) + '"></div>' +
+      '<div><label class="field-label" for="f-v">BCR::ABL1（IS%）</label><input id="f-v" inputmode="decimal" type="text" value="' + esc(md ? md.v : '') + '"></div>' +
+      '<div><label class="field-label" for="f-lab">实验室 lab</label><input id="f-lab" type="text" value="' + esc(md ? md.lab : '') + '"></div>' +
+      '<div><label class="field-label" for="f-std">IS 标化 is_std（1=是 / 0=否）</label><input id="f-std" inputmode="decimal" type="text" value="' + esc(md ? md.is_std : '1') + '"></div>' +
+      '<div><label class="field-label" for="f-sens">灵敏度 sens</label><input id="f-sens" type="text" value="' + esc(md ? md.sens : 'MR4.5') + '"></div>' +
+      '<div><label class="field-label" for="f-unit">单位 unit</label><input id="f-unit" type="text" value="' + esc(md ? md.unit : 'IS%') + '"></div>' +
       '</div>' +
-      '<div class="row"><button type="button" class="btn" data-act="mol-save">保存（进候选 → 逐项核对）</button>' +
+      '<div class="row"><button type="button" class="btn" data-act="mol-save">保存（写入本机内存态）</button>' +
       '<button type="button" class="btn" data-act="mol-correct">改这一条（更正，不删除）</button>' +
       '<button type="button" class="btn btn-sm" data-act="mol-reject">模拟候选被拒收</button></div>' +
-      '<p class="muted">删除 = 更正：界面只出现「改这一条 / 更正」，历史版本同链可回溯。</p></section>';
+      '<p class="muted">删除 = 更正：界面只出现「改这一条 / 更正」，历史版本同链可回溯。</p>';
+    var extraPts = (ex().pcr || []);
+    h += '<h4 class="h3">本机新增的复查记录（' + extraPts.length + ' 条，内存态）</h4>';
+    if (!extraPts.length) h += '<p class="empty">还没有本机新增记录；保存后这里会列出，并同步进趋势图与复诊资料包。</p>';
+    else h += '<ul class="timeline">' + extraPts.map(function (x, i) {
+      return '<li><span class="t-date">' + esc(x.d) + '</span><div>' + esc(num(x.v, 3) + ' ' + (x.unit || 'IS%') +
+        ' · ' + (x.lab || '实验室未记录') + ' · IS 标化 ' + (x.is_std === 1 ? '是' : '否')) + ' ' + recBadge(x.recorder) +
+        ' <span class="src">来源：' + esc(x.src || ('本机录入 · ' + MEM_NOTICE)) + '</span> ' +
+        '<button type="button" class="btn btn-sm" data-act="mol-local-del" data-id="' + i + '">撤回这一条（本机）</button></div></li>';
+    }).join('') + '</ul>';
+    h += '</section>';
 
     /* 治疗路径折叠卡（docs/32 号硬结构） */
     var ph = pathwayOf();
@@ -795,14 +1199,22 @@
       '<div class="row"><a class="btn" href="#tfr">去 TFR 档案（条件核对清单 + 密测轨道）</a></div></section>';
 
     h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>本页 AI 协助</h3></div><div class="row">' + aiButton('mol', '按可比性分组') + '</div></section>';
+
+    /* P0-4 / P0-7 / P0-8：「⋯ 更多」收口 + S7「停药尝试准备」+ CML-LAB 二级页入口 */
+    h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>手工入口与二级页</h3></div>' +
+      eachLink() + moreBlock('mol') + '</section>';
     return h;
+  }
+  function eachLink() {
+    return '<p class="muted">二级页：<a href="#mol/lab">复查记录 CML-LAB（血常规密测轨道 + 骨髓 / 细胞遗传学原文摘录）</a>；' +
+      '<a href="#docs">资料导入（字段候选 → 逐项核对）</a>；<a href="#trial">临床试验（M4 数据未接入）</a>。</p>';
   }
 
   /* ================= 页面：med ================= */
   function pageMed() {
     var p = profile(), ml = p.med_log || {};
     var tabs = [['checkin', '今日打卡'], ['calendar', '依从日历'], ['rx', '处方变更（二级）']];
-    var h = '<div class="page-head"><h1>服药线</h1>' + badge('档案 ' + state.profile) + badge(authorRole()) + badge('图谱 CML-MED') + '</div>';
+    var h = '<div class="page-head"><h1>服药线</h1>' + badge('档案 ' + state.profile + ' · ' + authorView()) + badge('图谱 CML-MED') + badge('记录者随条目标注') + '</div>';
     h += '<p class="muted">本一级页的 AI 协助入口在「处方变更（二级）」节（1 处）；「今日打卡」节不提供 AI 生成，理由写在该节内。' +
       '<button type="button" class="btn btn-sm" data-act="med-tab" data-v="rx">打开处方变更节</button></p>';
     h += '<div class="tabs" role="tablist">' + tabs.map(function (tb) {
@@ -850,23 +1262,55 @@
         h += '</div>';
       });
       h += '<h4 class="h3">剂量与频次</h4>' +
-        dataTable(['起止', '药名', '剂量', '频次', '原因原文 / 凭据'], (p.rx || []).map(function (r) {
-          return [esc(r[0] + ' → ' + (r[4] || '持续中')), esc(r[1]), esc(r[2]), esc(r[3]), esc(r[5]) + '<span class="src">' + esc(r[6]) + '</span>'];
+        dataTable(['起止', '药名', '剂量', '频次', '原因原文', '记录者'], rxRows().map(function (r) {
+          return [esc(r.start + ' → ' + (r.stop || '持续中')), esc(r.drug), esc(r.dose), esc(r.freq), rxReasonCell(r), recBadge(r.recorder)];
         })) +
-        '<p class="muted">频次枚举：每日（daily）/ 隔日（qod）/ 间歇；本表只照抄处方线与门诊记录。</p></section>';
+        '<p class="muted">频次枚举：每日（daily）/ 隔日（qod）/ 间歇（intermittent）/ 无每日服药（none）；本表只照抄处方线与门诊记录。</p></section>';
     }
 
     if (state.medTab === 'rx') {
-      h += '<section class="card"><div class="card-head"><h3>处方变更（二级）</h3>' + badge('旧段不被覆盖，只增版本') + '</div>' +
-        dataTable(['起始', '药名', '剂量', '频次', '停止', '变更原因原文', '凭据'],
-          (p.rx || []).map(function (r) {
-            return [esc(r[0]), esc(r[1]), esc(r[2]), esc(r[3]), esc(r[4] || '持续中'), esc(r[5]), esc(r[6]) + (r[7] ? '<span class="src">文件 ' + esc(r[7]) + '</span>' : '')];
+      var rxs = rxRows();
+      h += '<section class="card"><div class="card-head"><h3>处方变更（二级）</h3>' + badge('旧段不被覆盖，只增版本') +
+        badge('当前 ' + rxs.length + ' 段') + '</div>' +
+        dataTable(['起始', '药名', '剂量', '频次', '停止', '变更原因原文', '凭据', '记录者'],
+          rxs.map(function (r) {
+            return [esc(r.start + (r.local ? '（本机新增）' : '')), esc(r.drug), esc(r.dose), esc(r.freq), esc(r.stop || '持续中'),
+              rxReasonCell(r), esc(r.src || '未记录') + (r.doc ? '<span class="src">文件 ' + esc(r.doc) + '</span>' : ''), recBadge(r.recorder)];
           })) +
-        '<p class="note">与分子点的时间关系：见分子线页趋势图上的日期刻度与 3/6/12 月里程碑参考线。</p></section>';
+        '<p class="note">与分子点的时间关系：见分子线页趋势图上的日期刻度与 3/6/12 月里程碑参考线。旧段不被覆盖：新提交只追加一段，历史段落原样保留。</p></section>';
+
+      /* P0-4：处方变更手工通道（6 字段） */
+      var rd = draft().rx || null;
+      h += '<section class="card" id="rxFormCard" style="margin-top:12px"><div class="card-head"><h3>换药/调剂量了（手工 6 字段）</h3>' +
+        badge('记录者：' + recorderDefault()) + '</div>' +
+        '<p class="muted mem-notice">' + MEM_NOTICE + '：提交后处方变更线新增 1 段，旧段不被覆盖。</p>';
+      var rw = lastWrite('rx');
+      if (rw && rw.profile === state.profile) h += '<p class="ok" id="rxWriteMsg">' + esc(rw.text) + '</p>';
+      h += '<div class="grid">' +
+        '<div><label class="field-label" for="rx-drug">药名</label><input id="rx-drug" type="text" value="' + esc(rd ? rd.drug : '') + '"></div>' +
+        '<div><label class="field-label" for="rx-dose">剂量</label><input id="rx-dose" inputmode="decimal" type="text" value="' + esc(rd ? rd.dose : '') + '"></div>' +
+        '<div><label class="field-label" for="rx-freq">频次</label><select id="rx-freq">' +
+        ['daily', 'qod', 'intermittent', 'none'].map(function (k) {
+          var sel2 = (rd ? rd.freq : 'daily') === k ? ' selected' : '';
+          return '<option value="' + k + '"' + sel2 + '>' + k + '（' + ({ daily: '每日', qod: '隔日', intermittent: '间歇', none: '无每日服药' }[k]) + '）</option>';
+        }).join('') + '</select></div>' +
+        '<div><label class="field-label" for="rx-start">开始日期</label><input id="rx-start" type="text" value="' + esc(rd ? rd.start : TODAY) + '"></div>' +
+        '<div><label class="field-label" for="rx-stop">结束日期（可空 = 持续中）</label><input id="rx-stop" type="text" value="' + esc(rd ? rd.stop : '') + '"></div>' +
+        '<div><label class="field-label" for="rx-reason">变更原因原文（医嘱 / 门诊记录逐字）</label><input id="rx-reason" type="text" value="' + esc(rd ? rd.reason : '') + '"></div>' +
+        '</div>' +
+        '<div class="row"><button type="button" class="btn" data-act="rx-save">提交（只新增版本）</button>' +
+        '<button type="button" class="btn btn-sm" data-act="rx-clear">清空草稿</button></div>' +
+        '<p class="muted">原因原文只照抄你手里的门诊记录 / 医嘱文字；本仓不代拟药名与剂量。</p></section>';
+
       h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>本页 AI 协助（仅处方变更节）</h3></div>' +
         '<p class="muted">今日打卡节不提供 AI 生成（理由见该节）；处方变更是文本归纳任务，可带上下文生成草稿。</p>' +
         '<div class="row">' + aiButton('med', '整理处方变更线') + '</div></section>';
     }
+
+    /* P0-4：全站「⋯ 更多」收口（含逐字入口「换药/调剂量了」） */
+    h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>手工入口</h3></div>' +
+      '<p class="muted">本次改动里的手工写入口收在「⋯ 更多」；卡片上只留一个显式编辑动作。</p>' +
+      moreBlock('med') + '</section>';
     return h;
   }
 
@@ -876,7 +1320,8 @@
     var keep = lexiconKeys();
     var shown = rows.filter(function (r) { return keep.indexOf(r.drug) >= 0 || r.example; });
     var hidden = rows.length - shown.length;
-    var h = '<div class="page-head"><h1>副作用日志</h1>' + badge('档案 ' + state.profile) + badge(authorRole()) + badge('HVT-05 / HVT-09') + '</div>';
+    var h = '<div class="page-head"><h1>副作用日志</h1>' + badge('档案 ' + state.profile + ' · ' + authorView()) +
+      badge('HVT-05 / HVT-09') + badge('记录者随条目标注') + '</div>';
 
     h += '<section class="card"><div class="card-head"><h3>按当前用药过滤的词表</h3>' + badge('当前：' + currentDrugLabel()) +
       badge('已过滤掉 ' + hidden + ' 条非当前用药条目') + '</div>';
@@ -884,95 +1329,182 @@
     h += '<p class="muted">被隐藏的词表条目数：' + lexiconHidden() + '（伊马替尼 / 尼洛替尼相关词条在当前用药下不展示）。</p>';
     h += '<p class="note">不是全表平铺：词表随当前用药变化——A 当前＝达沙替尼 → dasatinib + withdrawal；B 当前＝停药 → 只 withdrawal。</p></section>';
 
-    h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>时间线（与用药并列）</h3></div>';
+    /* P0-3：时间线 + 「记一次不舒服」入口（5 字段手工表单） */
+    h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>时间线（与用药并列）</h3>' +
+      badge('条目 ' + shown.length + ' 条') + '</div>';
+    h += '<div class="row" id="aeEntryRow"><button type="button" class="btn" data-act="ae-new">记一次不舒服</button>' +
+      '<span class="muted">入口逐字：副作用卡「记一次不舒服」（5 字段）。</span></div>';
     if (!shown.length) h += '<p class="empty">词表引导：先选一种不适（按当前用药列出），再补日期与自述。</p>';
-    else h += '<ul class="timeline">' + shown.map(function (r) {
-      return '<li><span class="t-date">' + esc(r.d) + '</span><div>' + esc(r.name) + ' ' + badge(r.drug) +
+    else h += '<ul class="timeline" id="aeTimeline">' + shown.map(function (r) {
+      var label = (r.recorder === '本人') ? '自述原文：' : '代记原文（患者原话）：';
+      return '<li><span class="t-date">' + esc(r.d) + '</span><div>' + esc(r.name) + ' ' + badge(r.drug) + ' ' + recBadge(r.recorder) +
         (r.visibility === 'private' ? badge('私密') : badge('共享')) + (r.example ? badge('原型示例') : '') +
-        '<span class="src">自述原文：' + esc(r.desc) + '</span>' +
+        (r.local ? badge('本机新增', true) : '') +
+        '<span class="src">' + esc(label) + esc(r.desc) + '</span>' +
         '<span class="src">处理原文：' + esc(r.action || '未记录') + (r.doc ? ' · 文件 ' + esc(r.doc) : '') + '</span>' +
         '<div class="row"><button type="button" class="btn btn-sm" data-act="ae-vis" data-id="' + esc(r.id) + '" data-v="' +
         (r.visibility === 'private' ? 'shared' : 'private') + '">' + (r.visibility === 'private' ? '改为共享' : '标为私密') + '</button></div></div></li>';
     }).join('') + '</ul>';
-    if (state.profile === 'B') h += '<p class="muted">停药综合征条目（肌肉骨骼疼痛 / 皮肤瘙痒）的时间线已与停药日 2026-04-10 对齐显示。</p>';
+    if (state.profile === 'B') h += '<p class="muted">停药综合征条目（肌肉骨骼疼痛 / 皮肤瘙痒）的时间线已与停药日 2026-04-10 对齐显示；这些条目的记录者是家属代记，患者原话另标。</p>';
     h += '<p class="note">无严重度判读列；只记录「哪种不适、哪天、和哪种药有关」。</p></section>';
 
+    /* P0-3：≤5 字段手工表单 */
+    var ad = draft().ae || null;
+    h += '<section class="card" id="aeFormCard" style="margin-top:12px"><div class="card-head"><h3>记一次不舒服（手工 5 字段）</h3>' +
+      badge('记录者：' + recorderDefault()) + '</div>' +
+      '<p class="muted mem-notice">' + MEM_NOTICE + '：提交后下面时间线新增 1 条。</p>';
+    var aw = lastWrite('ae');
+    if (aw && aw.profile === state.profile) h += '<p class="ok" id="aeWriteMsg">' + esc(aw.text) + '</p>';
+    h += '<div class="grid">' +
+      '<div><label class="field-label" for="ae-w">不适词（按当前用药的词表）</label><select id="ae-w">' +
+      lexiconFiltered().map(function (o) {
+        var sel2 = (ad ? ad.name : '') === o.w ? ' selected' : '';
+        return '<option value="' + esc(o.w) + '"' + sel2 + '>' + esc(o.w) + '</option>';
+      }).join('') + '</select></div>' +
+      '<div><label class="field-label" for="ae-d">日期</label><input id="ae-d" type="text" value="' + esc(ad ? ad.d : TODAY) + '"></div>' +
+      '<div><label class="field-label" for="ae-drug">归属用药</label><select id="ae-drug">' +
+      lexiconKeys().map(function (k) {
+        var sel2 = (ad ? ad.drug : currentDrugKey()) === k ? ' selected' : '';
+        return '<option value="' + esc(k) + '"' + sel2 + '>' + esc(drugLabelOf(k)) + '</option>';
+      }).join('') + '</select></div>' +
+      '<div><label class="field-label" for="ae-desc">一句自述</label><input id="ae-desc" type="text" value="' + esc(ad ? ad.desc : '') + '"></div>' +
+      '<div><label class="field-label" for="ae-doc">凭据（文件名 / 门诊日期，可空）</label><input id="ae-doc" type="text" value="' + esc(ad ? ad.doc : '') + '"></div>' +
+      '</div>' +
+      '<div class="row"><button type="button" class="btn" data-act="ae-save">提交（写入本机内存态）</button>' +
+      '<button type="button" class="btn btn-sm" data-act="ae-clear">清空草稿</button></div>' +
+      '<p class="muted">自述只照抄你写的那句话；本页不做严重度分级、不做归因判断。</p></section>';
+
+    /* 三出口计数：与行内切换用同一个数组（aeRows），声明与实现一致 */
+    var aeAll = aeRows();
     h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>私密条目与三出口</h3></div>' + privateNote() +
-      kvTable([['私密条目数（本档案）', String(sensitiveRecords().filter(function (r) { return r.visibility === 'private'; }).length)],
-        ['<code>fetchExport()</code> 保留', String(filterPrivate(sensitiveRecords(), 'export').length)],
-        ['<code>buildAiContext()</code> 保留', String(filterPrivate(sensitiveRecords(), 'ai').length)],
-        ['<code>buildSummary()</code> 保留', String(filterPrivate(sensitiveRecords(), 'summary').length)]]) +
-      '<p class="muted">行内「标为私密 / 改为共享」会立刻改变上面三个出口的计数（同一函数、同一规则）。</p></section>';
+      kvTable([['副作用条目总数（本档案，含私密）', String(aeAll.length)],
+        ['私密条目数（本档案）', String(aeAll.filter(function (r) { return r.visibility === 'private'; }).length)],
+        ['<code>fetchExport()</code> 保留 / 过滤', filterPrivate(aeAll, 'export').length + ' / ' + (aeAll.length - filterPrivate(aeAll, 'export').length)],
+        ['<code>buildAiContext()</code> 保留 / 过滤', filterPrivate(aeAll, 'ai').length + ' / ' + (aeAll.length - filterPrivate(aeAll, 'ai').length)],
+        ['<code>buildSummary()</code> 保留 / 过滤', filterPrivate(aeAll, 'summary').length + ' / ' + (aeAll.length - filterPrivate(aeAll, 'summary').length)]]) +
+      '<p class="muted">行内「标为私密 / 改为共享」会立刻改变上面三个出口的计数（与页面计数用同一个 <code>aeRows()</code> 数组、同一个 <code>filterPrivate(list, exit)</code>）。</p></section>';
 
     h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>本页 AI 协助</h3></div>' +
       '<div class="row">' + aiButton('ae', '按药整理时间线') + '</div></section>';
+
+    /* P0-4：全站「⋯ 更多」收口 */
+    h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>手工入口</h3></div>' + moreBlock('ae') + '</section>';
     return h;
   }
 
-  /* ================= 页面：tfr ================= */
+  /* ================= 页面：tfr（P0-10：删掉一切自作判读，只记「字段出现在报告里了吗」） ================= */
   function tfrRow(row, idx, kind) {
-    var st = state.tfrState[kind + idx] || row[1];
-    var states = ['已确认', '未确认', '不适用'];
-    if (row[1] === '未满足') states = ['未满足', '已确认', '不适用'];
-    var btns = states.map(function (s) {
-      return '<button type="button" class="btn btn-sm" data-act="tfr-state" data-k="' + kind + idx + '" data-v="' + esc(s) + '" aria-pressed="' + (st === s) + '">' + esc(s) + '</button>';
+    var key = kind + idx;
+    var st = state.tfrState[key] || tfrMapState(row[1]);
+    var btns = TFR_STATES.map(function (x) {
+      return '<button type="button" class="btn btn-sm" data-act="tfr-state" data-k="' + key + '" data-v="' + esc(x) +
+        '" aria-pressed="' + (st === x) + '">' + esc(x) + '</button>';
     }).join(' ');
-    return [esc(row[0]), btns + '<span class="src">当前：' + esc(st) + '</span>', esc(row[2])];
+    return [tfrConditionCell(row), btns + '<span class="src">当前：' + esc(st) + '</span>', esc(tfrNote(row[2]))];
+  }
+  function tfrStateBtns(key, raw) {
+    var st = state.tfrState[key] || tfrMapState(raw);
+    return '<div class="row">' + TFR_STATES.map(function (x) {
+      return '<button type="button" class="btn btn-sm" data-act="tfr-state" data-k="' + key + '" data-v="' + esc(x) +
+        '" aria-pressed="' + (st === x) + '">' + esc(x) + '</button>';
+    }).join('') + '</div>';
   }
   function pageTfr() {
     var tfr = profile().tfr || { must: [], min: [], monitor: [] };
-    var h = '<div class="page-head"><h1>TFR 档案</h1>' + badge('档案 ' + state.profile) + badge(authorRole()) + badge('HVT-08') + '</div>';
+    var h = '<div class="page-head"><h1>TFR 档案</h1>' + badge('档案 ' + state.profile + ' · ' + authorView()) + badge('HVT-08') + badge('本页零判读') + '</div>';
 
-    h += '<section class="card"><div class="card-head"><h3>当前状态</h3>' + badge(tfr.status || '未开始核对') + '</div>' +
-      aiForbiddenNote('tfr') +
-      '<p class="note">本页不出现任何停药方向性文案；每条只显示「报告字段照抄位 + 状态」，不满足时只显示缺哪些字段（不给处置方向）。</p></section>';
+    h += '<section class="card"><div class="card-head"><h3>核对状态（照抄）</h3>' + badge('核对状态：' + tfrStatusLabel(tfr.status)) + '</div>' +
+      aiForbiddenNote('tfr') + tfrStatusDetail(tfr.status) +
+      '<p class="note">本页只做两件事：① 列出「指南 / 门诊书面条件条目」并给出它照抄自哪份记录；② 记录这个字段在你报告里出现了吗（三态：已抄录 / 未抄录 / 待补）。' +
+      '本页不判断这些条件是否成立，也不给任何停药或继续用药的方向；页内医生原话一律带来源、只作留档。</p>' +
+      '<p class="muted">指南书面条件原文如未逐字核对入库，条目来源处写「待补（本仓不代拟）」；不臆造原文。</p></section>';
 
-    h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>必备 5 条</h3>' + badge('报告字段照抄位 + 状态') + '</div>' +
-      dataTable(['报告字段照抄位', '状态（三态可切换）', '照抄自 / 说明'], (tfr.must || []).map(function (r, i) { return tfrRow(r, i, 'must'); })) + '</section>';
+    var tbl = ['书面条件条目（照抄报告字段）', '这个字段在报告里出现了吗（三态可切换）', '照抄自 / 说明（照抄原文，本仓不判读）'];
+    h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>必备 5 条</h3>' + badge('报告字段照抄位 + 三态') + '</div>' +
+      dataTable(tbl, (tfr.must || []).map(function (r, i) { return tfrRow(r, i, 'must'); })) + '</section>';
 
     h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>最低 5 条</h3>' + badge('第 5 行为最佳项') + '</div>' +
-      dataTable(['报告字段照抄位', '状态（三态可切换）', '照抄自 / 说明'], (tfr.min || []).map(function (r, i) { return tfrRow(r, i, 'min'); })) + '</section>';
+      dataTable(tbl, (tfr.min || []).map(function (r, i) { return tfrRow(r, i, 'min'); })) + '</section>';
 
     var best = (tfr.min || []).filter(function (r) { return /^最佳/.test(r[0]); })[0];
     h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>最佳项</h3>' + badge('单列') + '</div>' +
-      (best ? kvTable([['报告字段照抄位', esc(best[0])], ['状态', esc(state.tfrState['best0'] || best[1])], ['照抄自 / 说明', esc(best[2])]]) +
-        '<div class="row"><button type="button" class="btn btn-sm" data-act="tfr-state" data-k="best0" data-v="已确认">已确认</button>' +
-        '<button type="button" class="btn btn-sm" data-act="tfr-state" data-k="best0" data-v="未确认">未确认</button>' +
-        '<button type="button" class="btn btn-sm" data-act="tfr-state" data-k="best0" data-v="不适用">不适用</button></div>'
-        : '<p class="empty">未开始核对：本档案报告里暂无最佳项字段。</p>') + '</section>';
+      (best ? kvTable([['书面条件条目', tfrConditionCell(best)],
+        ['这个字段在报告里出现了吗', String(state.tfrState['best0'] || tfrMapState(best[1]))],
+        ['照抄自 / 说明', esc(tfrNote(best[2]))]]) + tfrStateBtns('best0', best[1])
+        : '<p class="empty">本档案报告里暂无最佳项字段（待补）。</p>') +
+      '<p class="muted">单列只为排版，不代表条件的成立与否。</p></section>';
 
     h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>密测轨道（三行）</h3></div>' +
-      dataTable(['轨道', '监测频率（照抄书面口径）', '进度'], (tfr.monitor || []).map(function (r) {
+      dataTable(['轨道', '监测频率（照抄书面口径）', '进度（照抄门诊记录）'], (tfr.monitor || []).map(function (r) {
         return [esc(r[0]), esc(r[1]), esc(r[2])];
       })) +
-      '<p class="note">轨道只显示排期与进度，不给「是否该继续监测」的判断。</p></section>';
+      '<p class="note">轨道只显示排期与进度，不给「是否该继续监测」的判断；血常规密测轨道见分子线二级页「复查记录 CML-LAB」。</p>' +
+      '<div class="row"><a class="btn btn-sm" href="#mol/lab">去复查记录 CML-LAB（血常规密测轨道）</a></div></section>';
 
     var doc = (profile().rx || []).filter(function (r) { return r[3] === 'none'; })[0];
     h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>门诊记录引用（仅医生原话 + 来源）</h3></div>';
-    if (doc) h += '<p>' + q(doc[5], doc[6]) + '</p>';
+    if (doc) h += '<p>' + q(String(doc[5]).replace(/^医生原话：「|」$/g, ''), (doc[6] || '未记录') + (doc[7] ? ' · 文件 ' + doc[7] : '')) + '</p>';
     else h += '<p class="muted">本档案门诊记录中无常停药相关原话引用；待门诊补录。</p>';
-    h += '<p class="muted">引用只为留档；本页不据此给任何处置方向。</p></section>';
+    h += '<p class="muted">引用只为留档：医生原话原样照抄并带来源，本页不据此给任何处置方向。</p></section>';
+
+    h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>手工入口</h3></div>' + moreBlock('tfr') + '</section>';
     return h;
   }
 
-  /* ================= 页面：cost ================= */
+  /* ================= 页面：cost（P0-2：记一笔入口 + ≤5 字段手工表单） ================= */
   function pageCost() {
-    var p = profile();
-    var byDrug = {}, byMonth = {};
-    (p.cost || []).forEach(function (c) {
-      var m = c[0], drug = c[1], amt = c[2] * (c[3] || 1);
-      byDrug[drug] = (byDrug[drug] || 0) + amt;
-      byMonth[m] = byMonth[m] || [];
-      byMonth[m].push([drug, amt, c[4], c[5]]);
+    var rows = costRows();
+    var byDrug = {}, byMonth = {}, total = 0;
+    rows.forEach(function (c) {
+      var amt = Number(c.amt || 0) * Number(c.qty == null ? 1 : c.qty);
+      byDrug[c.drug] = (byDrug[c.drug] || 0) + amt;
+      byMonth[c.m] = byMonth[c.m] || [];
+      byMonth[c.m].push(c);
+      total += amt;
     });
-    var h = '<div class="page-head"><h1>费用记录</h1>' + badge('档案 ' + state.profile) + badge('按月聚合，不跨药混算') + '</div>';
-    h += '<section class="card"><div class="card-head"><h3>按月 × 按药</h3></div>' +
-      dataTable(['月份', '药名', '自费金额（元）', '数量', '说明', '备注'], (p.cost || []).map(function (c) {
-        return [esc(c[0]), esc(c[1]), esc(String(c[2] * (c[3] || 1))), esc(String(c[3])), esc(c[4]), esc(c[5] || '—')];
+    var lastMonth = Object.keys(byMonth).sort().pop() || '—';
+    var monthSum = (byMonth[lastMonth] || []).reduce(function (a, c) { return a + Number(c.amt || 0) * Number(c.qty == null ? 1 : c.qty); }, 0);
+
+    var h = '<div class="page-head"><h1>费用记录</h1>' + badge('档案 ' + state.profile + ' · ' + authorView()) +
+      badge('按月聚合，不跨药混算') + badge('记录者随条目标注') + '</div>' +
+      '<p class="muted mem-notice">' + MEM_NOTICE + '：提交后当月聚合与按药小计立刻变化。</p>' +
+      '<div class="row"><button type="button" class="btn" data-act="cost-new">记一笔</button>' +
+      '<span class="muted">入口逐字：费用卡「记一笔」（手工 5 字段）。</span></div>';
+
+    /* P0-2：≤5 字段手工表单（药名 / 规格 / 自费金额 / 医保标记 / 日期） */
+    var cd = draft().cost || null;
+    h += '<section class="card" id="costFormCard"><div class="card-head"><h3>记一笔（手工 5 字段）</h3>' +
+      badge('记录者：' + recorderDefault()) + '</div>';
+    var cw = lastWrite('cost');
+    if (cw && cw.profile === state.profile) h += '<p class="ok" id="costWriteMsg">' + esc(cw.text) + '</p>';
+    h += '<div class="grid">' +
+      '<div><label class="field-label" for="cost-drug">药名</label><input id="cost-drug" type="text" value="' + esc(cd ? cd.drug : '') + '"></div>' +
+      '<div><label class="field-label" for="cost-spec">规格</label><input id="cost-spec" type="text" value="' + esc(cd ? cd.spec : '') + '"></div>' +
+      '<div><label class="field-label" for="cost-amount">自费金额（元）</label><input id="cost-amount" inputmode="decimal" type="text" value="' + esc(cd ? cd.amount : '') + '"></div>' +
+      '<div><label class="field-label" for="cost-insured">医保标记</label><select id="cost-insured">' +
+      ['门特报销后自付', '全自费', '医保统筹', '其他'].map(function (x) {
+        var sel2 = (cd ? cd.insured : '门特报销后自付') === x ? ' selected' : '';
+        return '<option value="' + esc(x) + '"' + sel2 + '>' + esc(x) + '</option>';
+      }).join('') + '</select></div>' +
+      '<div><label class="field-label" for="cost-date">日期</label><input id="cost-date" type="text" value="' + esc(cd ? cd.d : TODAY) + '"></div>' +
+      '</div>' +
+      '<div class="row"><button type="button" class="btn" data-act="cost-save">提交（写入本机内存态）</button>' +
+      '<button type="button" class="btn btn-sm" data-act="cost-clear">清空草稿</button></div>' +
+      '<p class="muted">金额只照抄票据原文；不跨药混算，不做省不省钱的判断。</p></section>';
+
+    h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>按月 × 按药</h3>' +
+      badge('条目 ' + rows.length + ' 条') + '</div>' +
+      dataTable(['月份', '药名', '自费金额（元）', '数量', '说明', '备注', '记录者'], rows.map(function (c) {
+        return [esc(c.m) + (c.local ? ' ' + badge('本机新增', true) : ''), esc(c.drug), esc(String(Number(c.amt || 0) * Number(c.qty == null ? 1 : c.qty))),
+          esc(String(c.qty)), esc(c.note), esc(c.extra || '—'), recBadge(c.recorder)];
       })) + '</section>';
 
-    h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>按药小计（不跨药混算）</h3></div>' +
-      dataTable(['药名', '合计自费（元）'], Object.keys(byDrug).map(function (d) { return [esc(d), esc(String(byDrug[d]))]; })) + '</section>';
+    h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>聚合（不跨药混算）</h3></div>' +
+      kvTable([['当月（' + esc(lastMonth) + '）自费合计', '<span id="costMonthAgg">' + monthSum + '</span> 元'],
+        ['全部月份自费合计', '<span id="costTotalAgg">' + total + '</span> 元'],
+        ['本机新增', '<span id="costLocalCount">' + (ex().cost || []).length + '</span> 笔']]) +
+      dataTable(['药名', '合计自费（元）'], Object.keys(byDrug).map(function (d) { return [esc(d), esc(String(byDrug[d]))]; })) +
+      '<p class="muted">同一月份不同药不合并计算；本机新增条目参与上面的聚合。</p></section>';
 
     var mc = metricByKey('cost');
     if (mc) {
@@ -981,26 +1513,32 @@
         '<p class="muted">口径：' + esc(mc.note || '') + '；本图按数值线性绘制，不做判读。</p></section>';
     }
     h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>本页 AI 协助</h3></div><div class="row">' + aiButton('cost', '按月按药汇总') + '</div></section>';
+    h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>手工入口</h3></div>' + moreBlock('cost') + '</section>';
     return h;
   }
 
-  /* ================= 页面：fert ================= */
+  /* ================= 页面：fert（S9：入口逐字「我要问的」） ================= */
   function pageFert() {
     var rows = fertilityRows();
-    var h = '<div class="page-head"><h1>生育计划</h1>' + badge('档案 ' + state.profile) + badge(authorRole()) + badge('HVT-10') + badge('默认私密') + '</div>';
+    var h = '<div class="page-head"><h1>生育计划</h1>' + badge('档案 ' + state.profile + ' · ' + authorView()) +
+      badge('HVT-10') + badge('默认私密') + badge('记录者随条目标注') + '</div>';
     h += '<section class="card">' + aiForbiddenNote('fert') + privateNote() + '</section>';
 
     h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>事实卡（零处置）</h3></div>';
-    h += dataTable(['条目', '内容（原文照抄）', '来源'], rows.map(function (r) {
-      return [esc(r.label), q(r.text, r.source), ''];
+    h += dataTable(['条目', '内容（原文照抄）', '来源', '记录者'], rows.map(function (r) {
+      return [esc(r.label), q(r.text, r.source), esc(r.source || '未记录'), recBadge(r.recorder)];
     }));
     h += '<p class="note">事实卡只放已发生的原文（本人自述、门诊原话、书面口径），不写方向性措辞。</p></section>';
 
-    h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>问题清单（去诊室用）</h3></div>' +
-      '<ul>' + rows.filter(function (r) { return /问/.test(r.label); }).map(function (r) {
-        return '<li>' + esc(r.text) + '<span class="src">来源：' + esc(r.source) + '</span></li>';
+    /* S9 入口逐字：资料夹「我要问的」 */
+    h += '<section class="card" id="fertAskCard" style="margin-top:12px"><div class="card-head"><h3>问题清单（去诊室用）</h3>' +
+      badge('记录者：' + recorderDefault()) + '</div>' +
+      '<div class="row" id="fertAskRow"><button type="button" class="btn" data-act="fert-ask">我要问的</button>' +
+      '<span class="muted">入口逐字：资料夹「我要问的」。点开后高亮下面这份清单。</span></div>' +
+      '<ul id="fertAskList">' + rows.filter(function (r) { return /问/.test(r.label); }).map(function (r) {
+        return '<li>' + esc(r.text) + recBadge(r.recorder) + '<span class="src">来源：' + esc(r.source) + '</span></li>';
       }).join('') + '</ul>' +
-      '<p class="muted">问题清单只写「要问什么」，不预写答案。</p></section>';
+      '<p class="muted">问题清单只写「要问什么」，不预写答案；本页不提供 AI 生成（红线：生育相关重大决策不 AI 生成）。</p></section>';
 
     h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>三出口计数（代码级过滤）</h3></div>' +
       kvTable([['本档案生育条目数', String(rows.length)],
@@ -1008,59 +1546,74 @@
         ['<code>buildAiContext()</code>（AI）保留 / 过滤', filterPrivate(rows, 'ai').length + ' / ' + (rows.length - filterPrivate(rows, 'ai').length)],
         ['<code>buildSummary()</code>（摘要）保留 / 过滤', filterPrivate(rows, 'summary').length + ' / ' + (rows.length - filterPrivate(rows, 'summary').length)]]) +
       '<p class="note">私密内容不进导出与 AI：默认 <code>visibility=&quot;private&quot;</code>，只有你显式改共享才带出；过滤靠代码，不靠文案。</p>' +
-      '<p class="muted">双主体：本条为「' + esc(authorRole()) + '」记录，界面带来源标记，不隐藏、不混淆。</p></section>';
+      '<p class="muted">双主体：本页是「' + esc(authorView()) + '」下的记录，逐条标记录者（' +
+      esc(rows.map(function (r) { return r.recorder; }).join(' / ')) + '），患者自己的原话才标「本人」。</p></section>';
+
+    h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>手工入口</h3></div>' + moreBlock('fert') + '</section>';
     return h;
   }
 
-  /* ================= 页面：prep ================= */
+  /* ================= 页面：prep（P0-6：三块导出 + 计数与导出一致；P0-8：引用 docs 候选） ================= */
   function pagePrep() {
-    var p = profile();
-    var facts = [], views = [], questions = [];
-    (metricByKey('pcr') || { points: [] }).points.forEach(function (pt) {
-      facts.push({ id: 'pcr-' + pt.d, visibility: 'shared', text: pt.d + ' BCR::ABL1 ' + num(pt.v, 3) + '%（' + (pt.lab || '未记录') + ' · IS 标化 ' + (pt.is_std === 1 ? '是' : '未记录') + ' · ' + (pt.sens || '未记录') + '）' });
-    });
-    (p.cbc || []).slice(-3).forEach(function (c, i) {
-      facts.push({ id: 'cbc-' + i, visibility: 'shared', text: c[0] + ' 血常规 白细胞 ' + c[1] + ' / 血小板 ' + c[2] + ' / 血红蛋白 ' + c[3] + ' / 中性粒细胞 ' + c[4] });
-    });
-    (p.viewpoints || []).forEach(function (v, i) {
-      /* B 档案 2026-05-20 那条含患者原话敏感词，按禁词规则不渲染 */
-      if (state.profile === 'B' && v[0] === '2026-05-20') return;
-      views.push({ id: 'vp-' + i, visibility: 'shared', text: v[0] + ' ' + v[1] + '：' + v[2], source: v[0] + '（本人记录）' });
-    });
-    questions.push({ id: 'q1', visibility: 'shared', text: '下次复查的时间和项目是什么？' });
-    questions.push({ id: 'q2', visibility: 'shared', text: p.fertility && p.fertility[2] ? p.fertility[2][1] : '长期服药对身体的其它影响有哪些？' });
-    var all = facts.concat(views).concat(questions).concat(sensitiveRecords());
+    var b = prepBundle();
+    var keptExport = filterPrivate(b.all, 'export');
+    var keptAi = filterPrivate(b.all, 'ai');
+    var keptSum = filterPrivate(b.all, 'summary');
+    var sec = bundleSections(keptExport);
 
-    var h = '<div class="page-head"><h1>复诊准备</h1>' + badge('档案 ' + state.profile) + badge(authorRole()) + badge('S5') + '</div>';
+    var h = '<div class="page-head"><h1>复诊准备</h1>' + badge('档案 ' + state.profile + ' · ' + authorView()) + badge('S5') + badge('记录者随条目标注') + '</div>';
     h += '<section class="card"><div class="card-head"><h3>时间区间</h3></div><div class="row">' +
       [['range-3m', '近 3 个月'], ['range-6m', '近 6 个月'], ['all', '全部']].map(function (o) {
         return '<button type="button" class="chip" data-act="prep-range" data-v="' + o[0] + '" aria-pressed="' + (state.prepRange === o[0]) + '">' + o[1] + '</button>';
-      }).join('') + '</div><p class="muted">区间只影响导出与摘要的取数范围。</p></section>';
+      }).join('') + '</div><p class="muted">区间真的影响取数：切换后下面三块与导出的条目数一起变。</p></section>';
 
-    h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>事实区</h3>' + badge('数值与报告原文') + '</div>' +
-      '<ul>' + facts.map(function (f) { return '<li>' + esc(f.text) + '</li>'; }).join('') + '</ul></section>';
+    h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>事实区</h3>' + badge('数值与报告原文') +
+      badge(sec.facts.length + ' 条') + '</div>' +
+      '<ul>' + (b.facts.length ? b.facts.map(function (f) { return '<li>' + esc(f.text) + ' ' + recBadge(f.recorder) + '</li>'; }).join('') : '<li>（区间内无条目）</li>') + '</ul>' +
+      '<p class="muted">本区数值来自「资料导入」的字段候选与报告原文 → <a href="#docs">去资料导入逐项核对</a>。</p></section>';
 
-    h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>看法区（原话）</h3></div>' +
-      '<ul>' + views.map(function (v) { return '<li>' + esc(v.text) + '<span class="src">来源：' + esc(v.source) + '</span></li>'; }).join('') + '</ul></section>';
+    h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>看法区（原话）</h3>' + badge(sec.views.length + ' 条') + '</div>' +
+      '<ul>' + (b.views.length ? b.views.map(function (v) {
+        return '<li>' + esc(v.text) + ' ' + recBadge(v.recorder) + '<span class="src">来源：' + esc(v.source) + '</span></li>';
+      }).join('') : '<li>（区间内无条目）</li>') + '</ul></section>';
 
-    h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>问题清单</h3></div>' +
-      '<ul>' + questions.map(function (x) { return '<li>' + esc(x.text) + '</li>'; }).join('') + '</ul></section>';
+    h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>问题清单</h3>' + badge(sec.questions.length + ' 条') + '</div>' +
+      '<ul>' + (b.questions.length ? b.questions.map(function (x) {
+        return '<li>' + esc(x.text) + ' ' + recBadge(x.recorder) + (x.source ? '<span class="src">来源：' + esc(x.source) + '</span>' : '') + '</li>';
+      }).join('') : '<li>（暂无）</li>') + '</ul></section>';
 
     h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>导出 / 摘要（三出口）</h3></div>' + privateNote() +
-      kvTable([['条目总数', String(all.length)],
-        ['导出出口 <code>fetchExport()</code> 保留 / 过滤', filterPrivate(all, 'export').length + ' / ' + (all.length - filterPrivate(all, 'export').length)],
-        ['AI 出口 <code>buildAiContext()</code> 保留 / 过滤', filterPrivate(all, 'ai').length + ' / ' + (all.length - filterPrivate(all, 'ai').length)],
-        ['摘要出口 <code>buildSummary()</code> 保留 / 过滤', filterPrivate(all, 'summary').length + ' / ' + (all.length - filterPrivate(all, 'summary').length)]]) +
+      kvTable([['条目总数（三块 + 私密条目）', String(b.all.length)],
+        ['导出出口 <code>fetchExport()</code> 保留 / 过滤', '<span id="prepExportKept">' + keptExport.length + '</span> / ' + (b.all.length - keptExport.length)],
+        ['AI 出口 <code>buildAiContext()</code> 保留 / 过滤', keptAi.length + ' / ' + (b.all.length - keptAi.length)],
+        ['摘要出口 <code>buildSummary()</code> 保留 / 过滤', keptSum.length + ' / ' + (b.all.length - keptSum.length)],
+        ['导出内容构成', '事实区 ' + sec.facts.length + ' 条 + 看法区 ' + sec.views.length + ' 条 + 问题清单 ' + sec.questions.length + ' 条 = ' + keptExport.length + ' 条']]) +
+      '<p class="muted">页面上的「保留 N」与导出的「条目 N 条」用同一个数组、同一次 <code>filterPrivate(list, "export")</code> 算出；导出只含事实区 / 看法区 / 问题清单三块，不含费用明细。</p>' +
       '<div class="row"><button type="button" class="btn" data-act="prep-export">导出资料包（private 过滤生效）</button>' +
       '<button type="button" class="btn" data-act="prep-summary">生成摘要</button>' + aiButton('prep', '整理资料包大纲') + '</div>' +
       '<pre class="agent-log" id="prepOut">' + esc(state.prepOut || '（尚未导出）') + '</pre></section>';
+
+    /* P0-8：把 docs / trial 放进场景路径 */
+    h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>本包引用的来源页</h3></div>' +
+      '<p class="muted">事实区的每条数值都应有报告文件出处：<a href="#docs">资料导入（字段候选 ' +
+      esc(((profile().candidates || [])[0] || ['—'])[0]) + ' … 逐项核对）</a>；' +
+      '本档案是否符合某项临床研究的核对字段见 <a href="#trial">临床试验（M4 数据未接入，只列字段）</a>。</p>' +
+      moreBlock('prep') + '</section>';
     return h;
   }
 
-  /* ================= 页面：docs ================= */
+  /* ================= 页面：docs（P0-5：接受候选真的改状态；P0-8：S5 路径引用） ================= */
   function pageDocs() {
     var p = profile();
-    var h = '<div class="page-head"><h1>资料导入</h1>' + badge('档案 ' + state.profile) + badge('MinerU 六部件') + badge('候选 → 核对 → 入库') + '</div>';
+    var acc = state.accepted[state.profile] || {};
+    var cands = (p.candidates || []).map(function (c) {
+      return { id: c[0], field: c[1], value: c[2], file: c[3], status: acc[c[0]] || c[4], local: !!acc[c[0]] };
+    });
+    var acceptedN = cands.filter(function (c) { return c.status === '已接受'; }).length;
+
+    var h = '<div class="page-head"><h1>资料导入</h1>' + badge('档案 ' + state.profile + ' · ' + authorView()) +
+      badge('MinerU 六部件') + badge('候选 → 核对 → 入库') + '</div>' +
+      '<p class="muted mem-notice" id="memNotice">' + MEM_NOTICE + '：「接受」只改本页候选状态与计数。</p>';
 
     h += '<section class="card"><div class="card-head"><h3>① 拖放区</h3></div>' +
       '<p class="empty">把 PDF / 拍照报告拖到这里，或点下面的按钮选文件（原型不读本机文件）。</p>' +
@@ -1073,7 +1626,7 @@
       dataTable(['部件', '状态', '产物'], [
         ['② 版面解析（layout）', badge('已解析'), '页 / 块 / 阅读顺序'],
         ['③ 表格还原（table）', badge('已解析'), '表格行 × 列（照抄，不改写）'],
-        ['④ 公式与单位（formula/unit）', badge('待核对'), '单位候选：IS% / 10⁹/L / g/L'],
+        ['④ 公式与单位（formula/unit）', badge('待核对'), '单位候选：IS% / 10⁹L / g/L'],
         ['⑤ OCR 文本（ocr）', badge('已解析'), '文本层 + 原文坐标'],
         ['⑥ 字段候选（field-candidate）', badge('待核对'), '字段名 + 抄录值 + 来源页码'],
         ['① 文件与版本（file）', badge('已入库'), '文件名 / 报告日期 / SHA-256']
@@ -1084,25 +1637,33 @@
         return [esc(d[0]), esc(d[1]), esc(d[2]), esc(d[3]), badge(d[4], d[4] === '待核对')];
       })) + '</section>';
 
-    h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>字段候选 → 逐项核对 → 入库</h3></div>' +
-      dataTable(['候选号', '字段', '抄录值', '来源文件', '状态', '核对动作'], (p.candidates || []).map(function (c) {
-        return [esc(c[0]), esc(c[1]), esc(c[2]), esc(c[3]), badge(c[4], c[4] === '待确认'),
-          '<button type="button" class="btn btn-sm" data-act="docs-accept" data-id="' + esc(c[0]) + '">接受</button> ' +
-          '<button type="button" class="btn btn-sm" data-act="docs-correct" data-id="' + esc(c[0]) + '">更正</button>'];
+    h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>字段候选 → 逐项核对 → 入库</h3>' +
+      badge('已接受 ' + acceptedN + ' / ' + cands.length + ' 条') + '</div>' +
+      dataTable(['候选号', '字段', '抄录值', '来源文件', '状态', '核对动作'], cands.map(function (c) {
+        return [esc(c.id), esc(c.field), esc(c.value), esc(c.file),
+          badge(c.status, c.status === '待确认') + (c.local ? ' ' + badge('本机改', true) : '') + ' ' + recBadge(recorderDefault()),
+          '<button type="button" class="btn btn-sm" data-act="docs-accept" data-id="' + esc(c.id) + '">接受</button> ' +
+          '<button type="button" class="btn btn-sm" data-act="docs-correct" data-id="' + esc(c.id) + '">更正</button>'];
       })) +
       '<p class="muted">候选被拒收即零副作用：不写库、不留半条记录，草稿保留。</p>' +
-      '<p class="muted">已接受：' + esc((p.candidates || []).filter(function (c) { return c[4] === '已接受'; }).map(function (c) { return c[0]; }).join('、') || '无') + '</p></section>';
+      '<p class="muted" id="docsAcceptedLine">已接受：' + esc(cands.filter(function (c) { return c.status === '已接受'; }).map(function (c) { return c.id; }).join('、') || '无') +
+      '（共 ' + acceptedN + ' 条，本机内存态）</p>' +
+      '<p class="muted">接受后本页状态列与计数立刻变；记录者：' + esc(recorderDefault()) + '。</p></section>';
 
     h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>本页 AI 协助</h3></div>' +
       '<div class="row">' + aiButton('docs', '列字段候选供核对') + '</div>' +
       '<p class="muted">生成物一律进「候选 → 逐项核对」通道，不会直接入库。</p></section>';
+
+    h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>手工入口与去向</h3></div>' +
+      '<p class="muted">本页候选是复诊资料包「事实区」的来源 → <a href="#prep">去复诊准备看资料包</a>。</p>' +
+      moreBlock('docs') + '</section>';
     return h;
   }
 
   /* ================= 页面：trial ================= */
   function pageTrial() {
     var ts = trials();
-    var h = '<div class="page-head"><h1>临床试验</h1>' + badge('档案 ' + state.profile) + badge('M4 数据未接入') + '</div>';
+    var h = '<div class="page-head"><h1>临床试验</h1>' + badge('档案 ' + state.profile) + badge('M4 数据未接入') + badge('零匹配结论') + '</div>';
     h += '<section class="card">';
     if (!ts.length) {
       h += '<p class="empty">还没有可显示的临床试验记录：本仓 M4 数据尚未接入（当前 trials 为空数组）。</p>' +
@@ -1115,6 +1676,10 @@
     h += '<p class="note">本页只列记录与原文，不做「你是否符合」的匹配结论。</p></section>';
     h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>本页 AI 协助</h3></div>' +
       '<div class="row">' + aiButton('trial', '列核对字段清单') + '</div></section>';
+    h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>从哪里进来（场景路径）</h3></div>' +
+      '<p class="muted">分子线趋势页的词表卡给出「临床研究核对字段」入口 → <a href="#mol">去分子线趋势与词表</a>；' +
+      '复诊资料包的来源页也引用本页字段清单 → <a href="#prep">去复诊准备</a>。</p>' +
+      moreBlock('trial') + '</section>';
     return h;
   }
 
@@ -1132,6 +1697,7 @@
     var r = parts[0];
     if (ROUTES.indexOf(r) < 0) r = 'dash';
     if (r === 'med' && ['checkin', 'calendar', 'rx'].indexOf(parts[1]) >= 0) state.medTab = parts[1];
+    if (r === 'mol') state.molTab = (parts[1] === 'lab') ? 'lab' : 'trend';
     return r;
   }
 
@@ -1171,17 +1737,38 @@
     if (hint) hint.textContent = '已填入提示词（未发送）。事件 cml:agent-draft 已派发。';
   }
 
+  /* P0-6：导出＝事实区 / 看法区 / 问题清单三块；计数与页面显示来自同一个 filterPrivate 调用 */
+  function bundleSections(kept) {
+    return {
+      facts: kept.filter(function (r) { return r.section === 'facts'; }),
+      views: kept.filter(function (r) { return r.section === 'views'; }),
+      questions: kept.filter(function (r) { return r.section === 'questions'; })
+    };
+  }
+  function bundleLines(rows) {
+    if (!rows.length) return '（区间内无条目）';
+    return rows.map(function (r) {
+      return '· ' + r.text + (r.source ? '（来源：' + r.source + '）' : '') + '（记录者：' + (r.recorder || recorderDefault()) + '）';
+    }).join('\n');
+  }
   function exportBundle() {
-    var recs = recordsForPage('prep');
-    var kept = filterPrivate(recs, 'export');           /* 出口 ①：导出 */
-    return '复诊资料包（' + state.prepRange + '）\n档案：' + profile().name + '（' + authorRole() + '）\n' +
-      '条目 ' + kept.length + ' 条，已过滤私密 ' + (recs.length - kept.length) + ' 条\n' +
-      kept.map(function (r) { return '· ' + r.text; }).join('\n');
+    var b = prepBundle();
+    var kept = filterPrivate(b.all, 'export');           /* 出口 ①：导出 */
+    var sec = bundleSections(kept);
+    return '复诊资料包（' + prepRangeLabel() + '）\n' +
+      '档案：' + profile().name + '（' + authorView() + '）\n' +
+      '条目 ' + kept.length + ' 条，已过滤私密 ' + (b.all.length - kept.length) + ' 条（与页面显示同一个数组、同一次 filterPrivate(list, "export")）\n' +
+      '\n【事实区】\n' + bundleLines(sec.facts) +
+      '\n\n【看法区】\n' + bundleLines(sec.views) +
+      '\n\n【问题清单】\n' + bundleLines(sec.questions);
   }
   function buildSummary() {
-    var recs = recordsForPage('prep');
-    var kept = filterPrivate(recs, 'summary');          /* 出口 ③：摘要 */
-    return '摘要（' + state.prepRange + '）：共 ' + kept.length + ' 条，私密 ' + (recs.length - kept.length) + ' 条未纳入。';
+    var b = prepBundle();
+    var kept = filterPrivate(b.all, 'summary');          /* 出口 ③：摘要 */
+    var sec = bundleSections(kept);
+    return '摘要（' + prepRangeLabel() + '）：事实区 ' + sec.facts.length + ' 条 / 看法区 ' + sec.views.length +
+      ' 条 / 问题清单 ' + sec.questions.length + ' 条；共 ' + kept.length + ' 条，私密 ' +
+      (b.all.length - kept.length) + ' 条未纳入。';
   }
   function fetchExport() { return exportBundle(); }     /* 三出口之「导出」的统一入口 */
 
@@ -1205,13 +1792,41 @@
     if (box && state.lastDraft && !box.value) box.value = state.lastDraft.prompt;
     var el2 = $('exitLog');
     if (el2) el2.textContent = JSON.stringify({ export: lastFilter('export'), ai: lastFilter('ai'), summary: lastFilter('summary') }, null, 1);
+    /* P0-1：打印媒体下新建的折叠卡也要展开（否则打印丢内容） */
+    if (printMediaMatches()) setPrintOpen(true);
+  }
+
+  /* ================= P0-1：打印时真展开折叠卡（display:grid 对闭合 details 无效） ================= */
+  function setPrintOpen(on) {
+    Array.prototype.forEach.call(document.querySelectorAll('details.phase-fold'), function (d) {
+      if (on) {
+        if (!d.open) { d.setAttribute('data-auto-open', '1'); d.open = true; }
+      } else if (d.getAttribute('data-auto-open') === '1') {
+        d.open = false;
+        d.removeAttribute('data-auto-open');
+      }
+    });
+  }
+  function printMediaMatches() {
+    try { return !!(window.matchMedia && window.matchMedia('print').matches); } catch (e) { return false; }
+  }
+  function initPrintOpen() {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    var mq = window.matchMedia('print');
+    var onChange = function (e) { setPrintOpen(!!(e && 'matches' in e ? e.matches : mq.matches)); };
+    if (mq.addEventListener) mq.addEventListener('change', onChange);
+    else if (mq.addListener) mq.addListener(onChange);
+    window.addEventListener('beforeprint', function () { setPrintOpen(true); });
+    window.addEventListener('afterprint', function () { setPrintOpen(false); });
+    setPrintOpen(printMediaMatches());
   }
 
   function goto(route, sub) {
     if (ROUTES.indexOf(route) < 0) route = 'dash';
     state.route = route;
     if (sub) { if (route === 'med') state.medTab = sub; }
-    var h = '#' + route + (route === 'med' && state.medTab !== 'checkin' ? '/' + state.medTab : '');
+    var h = '#' + route + (route === 'med' && state.medTab !== 'checkin' ? '/' + state.medTab : '') +
+      (route === 'mol' && state.molTab === 'lab' ? '/lab' : '');
     if (typeof location !== 'undefined' && location.hash !== h) location.hash = h;
     render();
     try { window.scrollTo(0, 0); } catch (e) { /* ignore */ }
@@ -1228,7 +1843,26 @@
     var act = el.getAttribute('data-act');
     var v = el.getAttribute('data-v');
 
-    if (act === 'profile') { state.profile = el.getAttribute('data-p'); state.molKeys = ['pcr']; state.checkin = null; state.aeVis = {}; state.tfrState = {}; render(); return; }
+    if (act === 'profile') {
+      /* P0-11④：切换档案时清空所有未提交草稿（A 的草稿不得出现在 B 的表单里） */
+      state.drafts = { A: {}, B: {} };
+      state.molDraft = null;
+      state.molState = 'live';
+      state.profile = el.getAttribute('data-p');
+      state.molKeys = ['pcr'];
+      state.molTab = 'trend';
+      state.checkin = null;
+      state.aeVis = {};
+      state.tfrState = {};
+      state.gloss = '';
+      state.prepOut = null;
+      state.docsFail = false;
+      state.lastDraft = null;
+      var ap = $('aiPrompt'); if (ap) ap.value = '';
+      var al = $('agentLog'); if (al) al.textContent = '（尚未触发）';
+      var ah = $('aiHint'); if (ah) ah.textContent = '已切换档案：未提交草稿已清空。';
+      render(); return;
+    }
     if (act === 'settings') { var m = $('settingsModal'); if (m) m.hidden = false; return; }
     if (act === 'cfg-close') { var m2 = $('settingsModal'); if (m2) m2.hidden = true; return; }
     if (act === 'cfg-path-save') { var g = $('cfgPathMsg'); if (g) g.textContent = '已保存（原型不写库）。'; return; }
@@ -1251,6 +1885,11 @@
 
     if (act === 'med-tab') { state.medTab = v; goto('med', v); return; }
     if (act === 'med-heat') { var hh = $('aiHint'); if (hh) hh.textContent = '热力图视图：' + (v === 'month' ? '月' : '年') + '（原型按数据逐月渲染）。'; return; }
+    if (act === 'today-taken') {
+      /* S2 入口逐字「今天吃了吗」：停药期无每日服药 → 去打卡页说明 */
+      if (currentDrugKey() === 'none') { goto('med', 'checkin'); return; }
+      state.checkin = 'taken'; state.writeFail = false; render(); return;
+    }
     if (act === 'checkin') { state.checkin = v; state.writeFail = false; render(); return; }
     if (act === 'write-fail') { state.writeFail = !state.writeFail; render(); return; }
 
@@ -1264,22 +1903,144 @@
       render(); return;
     }
     if (act === 'mol-demo') { state.molDemo = v; render(); return; }
-    if (act === 'mol-save') {
-      state.molDraft = { d: ($('f-d') || {}).value || TODAY, v: ($('f-v') || {}).value || '', lab: ($('f-lab') || {}).value || '', is_std: ($('f-std') || {}).value || '1', sens: ($('f-sens') || {}).value || '', unit: ($('f-unit') || {}).value || 'IS%' };
-      state.molState = 'live'; render(); return;
+    if (act === 'mol-tab') { state.molTab = v; goto('mol', v === 'lab' ? 'lab' : ''); return; }
+    if (act === 'mol-lab') { state.molTab = 'lab'; goto('mol', 'lab'); return; }
+    if (act === 'gloss') { state.gloss = (state.gloss === v) ? '' : v; render(); return; }
+    if (act === 'mol-save') { saveMol(); return; }
+    if (act === 'mol-correct') { var c = $('aiHint'); if (c) c.textContent = '更正模式：打开同一条记录的历史版本链（本机内存态）。'; return; }
+    if (act === 'mol-reject') {
+      state.molState = 'rejected';
+      draft().mol = readMolForm();                 /* 拒收零副作用：只留草稿，不写任何记录 */
+      render(); return;
     }
-    if (act === 'mol-correct') { var c = $('aiHint'); if (c) c.textContent = '更正模式：打开同一条记录的历史版本链（原型不写库）。'; return; }
-    if (act === 'mol-reject') { state.molState = 'rejected'; render(); return; }
-    if (act === 'mol-manual') { var mm = $('f-v'); if (mm) mm.focus(); return; }
+    if (act === 'mol-manual') { goto('mol'); focusFirst('#f-v'); return; }
+    if (act === 'mol-new') { goto('mol'); focusFirst('#f-v'); return; }
+    if (act === 'mol-local-del') {
+      ex().pcr.splice(Number(el.getAttribute('data-id')), 1);
+      noteWrite('mol', '已撤回一条本机新增记录（' + MEM_NOTICE + '）。');
+      render(); return;
+    }
+    if (act === 'tfr-prep') { goto('tfr'); return; }
 
     if (act === 'ae-vis') { state.aeVis[el.getAttribute('data-id')] = v; render(); return; }
+    if (act === 'ae-new') { goto('ae'); focusFirst('#ae-w'); return; }
+    if (act === 'ae-save') { saveAe(); return; }
+    if (act === 'ae-clear') { draft().ae = null; render(); return; }
+
+    if (act === 'cost-new') { goto('cost'); focusFirst('#cost-drug'); return; }
+    if (act === 'cost-save') { saveCost(); return; }
+    if (act === 'cost-clear') { draft().cost = null; render(); return; }
+
+    if (act === 'rx-new') { goto('med', 'rx'); focusFirst('#rx-drug'); return; }
+    if (act === 'rx-save') { saveRx(); return; }
+    if (act === 'rx-clear') { draft().rx = null; render(); return; }
+
+    if (act === 'fert-ask') {
+      var ask = $('fertAskList');
+      if (ask) { ask.classList.add('ask-hi'); try { ask.scrollIntoView({ block: 'center' }); } catch (e2) { /* ignore */ } }
+      var hh0 = $('aiHint'); if (hh0) hh0.textContent = '已打开「我要问的」问题清单（本页不提供 AI 生成）。';
+      return;
+    }
+
     if (act === 'tfr-state') { state.tfrState[el.getAttribute('data-k')] = v; render(); return; }
     if (act === 'prep-range') { state.prepRange = v; render(); return; }
     if (act === 'prep-export') { state.prepOut = exportBundle(); render(); return; }
     if (act === 'prep-summary') { state.prepOut = buildSummary(); render(); return; }
     if (act === 'docs-pick') { var dp = $('aiHint'); if (dp) dp.textContent = '原型不读本机文件；真实版本走 MinerU 六部件。'; return; }
     if (act === 'docs-fail') { state.docsFail = !state.docsFail; render(); return; }
-    if (act === 'docs-accept' || act === 'docs-correct') { var da = $('aiHint'); if (da) da.textContent = (act === 'docs-accept' ? '已接受候选 ' : '更正候选 ') + el.getAttribute('data-id') + '（原型不写库）。'; return; }
+    if (act === 'docs-accept' || act === 'docs-correct') {
+      var id = el.getAttribute('data-id');
+      state.accepted[state.profile][id] = (act === 'docs-accept' ? '已接受' : '已更正');
+      noteWrite('docs', (act === 'docs-accept' ? '已接受候选 ' : '已更正候选 ') + id + '（状态已变化，本机内存态）。');
+      render(); return;
+    }
+  }
+
+  function focusFirst(sel) {
+    var node = document.querySelector(sel);
+    if (node && node.focus) node.focus();
+  }
+  function readMolForm() {
+    return { d: ($('f-d') || {}).value || TODAY, v: ($('f-v') || {}).value || '', lab: ($('f-lab') || {}).value || '',
+      is_std: ($('f-std') || {}).value || '1', sens: ($('f-sens') || {}).value || '', unit: ($('f-unit') || {}).value || 'IS%' };
+  }
+  /* P0-5：保存真的写入本机内存态 → 趋势图新增点 / 分子记录 +1 */
+  function saveMol() {
+    var f = readMolForm();
+    var val = parseFloat(String(f.v).replace(/[^0-9.\-]/g, ''));
+    if (!isFinite(val)) {
+      state.molDraft = f;
+      noteWrite('mol', '保存失败：BCR::ABL1 值不是数字，未写入任何记录（草稿保留）。');
+      render(); return;
+    }
+    ex().pcr.push({
+      d: f.d || TODAY, v: val, src: '本机录入（' + MEM_NOTICE + '）', lab: f.lab || '未记录',
+      is_std: String(f.is_std) === '1' ? 1 : 0, unit: f.unit || 'IS%', sens: f.sens || '未记录',
+      recorder: recorderDefault(), local: true
+    });
+    state.molDraft = null; draft().mol = null; state.molState = 'live';
+    var n = (metricByKey('pcr') || { points: [] }).points.length;
+    noteWrite('mol', '已写入本机内存态：' + f.d + ' ' + val + ' ' + (f.unit || 'IS%') + '；趋势图当前 ' + n +
+      ' 个点（分子记录 +1）。' + MEM_NOTICE + '。');
+    render();
+  }
+  function saveAe() {
+    var name = ($('ae-w') || {}).value || '';
+    var d = ($('ae-d') || {}).value || TODAY;
+    var drug = ($('ae-drug') || {}).value || currentDrugKey();
+    var desc = ($('ae-desc') || {}).value || '';
+    var doc = ($('ae-doc') || {}).value || '';
+    if (!name || !desc) {
+      draft().ae = { name: name, d: d, drug: drug, desc: desc, doc: doc };
+      noteWrite('ae', '未提交：不适词与一句自述都要填（草稿保留）。');
+      render(); return;
+    }
+    ex().ae.push({ id: 'ae-' + state.profile + '-local-' + Date.now(), d: d, name: name, drug: drug, desc: desc,
+      action: recorderDefault() === '本人' ? '本人自述；未与医生提过' : '家属代记；未与医生提过', doc: doc,
+      recorder: recorderDefault() });
+    draft().ae = null;
+    var n = aeRows().length;
+    noteWrite('ae', '已写入本机内存态：时间线新增 1 条，当前 ' + n + ' 条。' + MEM_NOTICE + '。');
+    render();
+  }
+  function saveCost() {
+    var drug = ($('cost-drug') || {}).value || '';
+    var spec = ($('cost-spec') || {}).value || '';
+    var raw = ($('cost-amount') || {}).value || '';
+    var amount = parseFloat(String(raw).replace(/[^0-9.\-]/g, ''));
+    var insured = ($('cost-insured') || {}).value || '门特报销后自付';
+    var d = ($('cost-date') || {}).value || TODAY;
+    if (!drug || !isFinite(amount)) {
+      draft().cost = { drug: drug, spec: spec, amount: raw, insured: insured, d: d };
+      noteWrite('cost', '未提交：药名与自费金额都要填（草稿保留）。');
+      render(); return;
+    }
+    ex().cost.push({ drug: drug, spec: spec, amount: amount, insured: insured, d: d, recorder: recorderDefault() });
+    draft().cost = null;
+    var m = String(d).slice(0, 7);
+    var sum = 0;
+    costRows().forEach(function (c) { if (c.m === m) sum += Number(c.amt || 0) * Number(c.qty == null ? 1 : c.qty); });
+    noteWrite('cost', '已写入本机内存态：' + m + ' 当月自费合计变为 ' + sum + ' 元（当前 ' + costRows().length + ' 条）。' + MEM_NOTICE + '。');
+    render();
+  }
+  function saveRx() {
+    var drug = ($('rx-drug') || {}).value || '';
+    var dose = ($('rx-dose') || {}).value || '';
+    var freq = ($('rx-freq') || {}).value || 'daily';
+    var start = ($('rx-start') || {}).value || TODAY;
+    var stop = ($('rx-stop') || {}).value || null;
+    var reason = ($('rx-reason') || {}).value || '';
+    if (!drug || !reason) {
+      draft().rx = { drug: drug, dose: dose, freq: freq, start: start, stop: stop, reason: reason };
+      noteWrite('rx', '未提交：药名与变更原因原文都要填（草稿保留，旧段不动）。');
+      render(); return;
+    }
+    ex().rx.push({ drug: drug, dose: dose, freq: freq, start: start, stop: stop, reason: reason,
+      src: '本机录入 · ' + recorderDefault(), doc: '', recorder: recorderDefault() });
+    draft().rx = null;
+    noteWrite('rx', '已写入本机内存态：处方变更线新增 1 段（' + drug + ' ' + (dose || '剂量未填') + ' ' + freq +
+      '），旧段原样保留；当前 ' + rxRows().length + ' 段。' + MEM_NOTICE + '。');
+    render();
   }
 
   function onKeydown(e) {
@@ -1328,18 +2089,22 @@
     var sp = $('splitter');
     if (sp) sp.setAttribute('aria-valuemin', '25'), sp.setAttribute('aria-valuemax', '45'), sp.setAttribute('aria-valuenow', String(readPanelWidth()));
     initDrag();
+    initPrintOpen();
   }
 
   var API = {
-    VERSION: VERSION, BUILD: BUILD, ROUTES: ROUTES, AI_FORBIDDEN: AI_FORBIDDEN,
+    VERSION: VERSION, BUILD: BUILD, ROUTES: ROUTES, AI_FORBIDDEN: AI_FORBIDDEN, MEM_NOTICE: MEM_NOTICE,
     state: state, renderPage: renderPage, smoothPath: smoothPath, segmentsOf: segmentsOf,
     filterPrivate: filterPrivate, buildAiContext: buildAiContext, exportBundle: exportBundle,
-    buildSummary: buildSummary, fetchExport: fetchExport, makeDraft: makeDraft,
+    buildSummary: buildSummary, fetchExport: fetchExport, makeDraft: makeDraft, prepBundle: prepBundle,
     pathwayOf: pathwayOf, aeRows: aeRows, fertilityRows: fertilityRows, sensitiveRecords: sensitiveRecords,
     chartSVG: chartSVG, lexiconFiltered: lexiconFiltered, lexiconKeys: lexiconKeys,
-    aiPrompts: aiPrompts, HVT11: HVT11, authorRole: authorRole, profile: profile, metrics: metrics,
-    metricByKey: metricByKey, setProfile: function (k) { state.profile = k; return API; },
-    setRoute: function (r) { state.route = r; return API; }
+    aiPrompts: aiPrompts, HVT11: HVT11, authorRole: authorRole, authorView: authorView,
+    recorderDefault: recorderDefault, costRows: costRows, rxRows: rxRows, tfrMapState: tfrMapState,
+    TFR_STATES: TFR_STATES, GLOSS: GLOSS, profile: profile, metrics: metrics,
+    metricByKey: metricByKey,
+    setProfile: function (k) { state.profile = k; if (typeof document !== 'undefined') render(); return API; },
+    setRoute: function (r) { state.route = r; if (typeof document !== 'undefined') render(); return API; }
   };
   if (typeof window !== 'undefined') window.GRANPAL = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
