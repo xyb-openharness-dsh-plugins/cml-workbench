@@ -58,6 +58,29 @@ def serve(directory):
     return httpd, httpd.server_address[1]
 
 
+def ip6_counts(page, base, pages):
+    """IP6：每页顶层「新增/打开表单」入口 ≤1（行内三态/提交按钮/面板/设置不算）"""
+    # 只算「在本页原地打开表单」：走 goto() 跳转到别的页的快捷入口不算
+    OPEN = ('-new', '-manual', '-pick', '-qadd')
+    EXCL = ('panel-toggle', 'cfg-path-save', 'cfg-', '-state', '-save', 'mol-save')
+    out = {}
+    for pid in pages:
+        page.goto(f"{base}#{pid}", wait_until="load"); page.wait_for_timeout(140)
+        acts = page.evaluate("""(OPEN) => {
+          const r=[];
+          document.querySelectorAll('[data-act]').forEach(e=>{
+            const a=e.getAttribute('data-act');
+            if (e.closest('details.more')) return;
+            if (!OPEN.some(k=>a.endsWith(k))) return;
+            if (a==='mol-new'||a==='ae-new'||a==='cost-new'||a==='rx-new') return; /* 跳转型 */
+            r.push(a);
+          });
+          return r;
+        }""", list(OPEN))
+        out[pid] = acts
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--width", type=int, default=1440)

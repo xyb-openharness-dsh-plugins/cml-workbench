@@ -111,6 +111,9 @@
   /* P0-11①：双主体＝同一患者的两条记录视角，不是两位患者 */
   function authorRole() { return state.profile === 'B' ? '家属代记' : '患者本人'; }
   function authorView() { return state.profile === 'B' ? '家属代记视角' : '患者本人视角'; }
+  /* 双主体：同一档案内一条记录可由本人或家属代记。
+     演示档案 A 的记录者＝本人（patient self）；档案 B 由母亲代记为默认记录者，
+     患者本人原话仍按来源标「本人自述」——两者并存，不互相冒充。 */
   function recorderDefault() { return state.profile === 'B' ? '家属代记' : '本人'; }
   function recBadge(r) { return badge('记录者：' + (r || recorderDefault())); }
 
@@ -1447,6 +1450,13 @@
     else h += '<p class="muted">本档案门诊记录中无常停药相关原话引用；待门诊补录。</p>';
     h += '<p class="muted">引用只为留档：医生原话原样照抄并带来源，本页不据此给任何处置方向。</p></section>';
 
+    /* S7 产物：核对清单导出（只导照抄字段与原话，不含任何"是否满足"结论） */
+    h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>导出核对清单（去诊室用）</h3>' +
+      badge('三块：必备 / 最低 / 门诊原话') + '</div>' +
+      '<p class="muted">导出只含「报告字段照抄位 + 核对状态 + 医生原话与来源」，本清单不给结论。</p>' +
+      '<div class="row"><button type="button" class="btn" data-act="tfr-export">导出核对清单</button>' +
+      '<button type="button" class="btn btn-sm" data-act="tfr-print">打印这一页</button></div>' +
+      '<pre class="agent-log" id="tfrOut">' + esc(state.tfrOut || '（尚未导出）') + '</pre></section>';
     h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>手工入口</h3></div>' + moreBlock('tfr') + '</section>';
     return h;
   }
@@ -1538,7 +1548,16 @@
       '<ul id="fertAskList">' + rows.filter(function (r) { return /问/.test(r.label); }).map(function (r) {
         return '<li>' + esc(r.text) + recBadge(r.recorder) + '<span class="src">来源：' + esc(r.source) + '</span></li>';
       }).join('') + '</ul>' +
-      '<p class="muted">问题清单只写「要问什么」，不预写答案；本页不提供 AI 生成（红线：生育相关重大决策不 AI 生成）。</p></section>';
+      '<p class="muted">问题清单只写「要问什么」，不预写答案；本页不提供 AI 生成（红线：生育相关重大决策不 AI 生成）。</p>' +
+      '<div class="row" style="margin-top:8px"><label class="field-label" for="fertQ">新增要问的</label>' +
+      '<input id="fertQ" type="text" placeholder="只写要问什么，不写答案" value="' + esc((draft().fertQ || '')) + '">' +
+      '<button type="button" class="btn" data-act="fert-qadd">加入清单</button></div>' +
+      '<ul id="fertQNew">' + (state.fertQ || []).map(function (t, i) {
+        return '<li>' + esc(t) + recBadge(recorderDefault()) +
+          '<button type="button" class="btn btn-sm" data-act="fert-qdel" data-i="' + i + '">删掉这条</button></li>';
+      }).join('') + '</ul>' +
+      (state.fertQMsg ? '<p class="ok" id="fertQMsg">' + esc(state.fertQMsg) + '</p>' : '') +
+      '</section>';
 
     h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>三出口计数（代码级过滤）</h3></div>' +
       kvTable([['本档案生育条目数', String(rows.length)],
@@ -1944,6 +1963,44 @@
 
     if (act === 'tfr-state') { state.tfrState[el.getAttribute('data-k')] = v; render(); return; }
     if (act === 'prep-range') { state.prepRange = v; render(); return; }
+    /* S7 产物：导出核对清单（只照抄字段 + 原话，零结论） */
+    if (act === 'tfr-export') {
+      var tf = profile().tfr || { must: [], min: [], monitor: [] };
+      var lines = ['TFR 核对清单（档案 ' + state.profile + ' · ' + authorView() + '）',
+                   '导出时间：' + TODAY + ' · 只含报告字段照抄位与医生原话，本清单不给结论', ''];
+      lines.push('【必备 5 条】');
+      (tf.must || []).forEach(function (r, i) {
+        lines.push((i + 1) + '. ' + (r[0] || '') + '｜照抄位：' + (r[1] || '未抄录') + '｜状态：' + (r[2] || '待补'));
+      });
+      lines.push('', '【最低 5 条】');
+      (tf.min || []).forEach(function (r, i) {
+        lines.push((i + 1) + '. ' + (r[0] || '') + '｜照抄位：' + (r[1] || '未抄录') + '｜状态：' + (r[2] || '待补'));
+      });
+      lines.push('', '【门诊原话（带来源）】');
+      ((profile().tfr && profile().tfr.quotes) || []).forEach(function (qq2) {
+        lines.push('· ' + qq2[0] + '（来源：' + qq2[1] + '）');
+      });
+      state.tfrOut = lines.join('\n');
+      state.lastWrite = { page: 'tfr', profile: state.profile, text: '已生成核对清单：' + (tf.must || []).length + ' 条必备 + ' + (tf.min || []).length + ' 条最低 + ' + (((profile().tfr || {}).quotes) || []).length + ' 条门诊原话' };
+      render(); return;
+    }
+    if (act === 'tfr-print') { try { window.print(); } catch (e3) { /* ignore */ } return; }
+    if (act === 'fert-qadd') {
+      var inp = $('fertQ');
+      var v = inp ? String(inp.value || '').trim() : '';
+      if (!v) { state.fertQMsg = '写一句「要问什么」再点加入（不写答案）。'; render(); return; }
+      state.fertQ = (state.fertQ || []).concat([v]);
+      draft().fertQ = '';
+      state.fertQMsg = '已加入清单：' + v + '（记录者：' + recorderDefault() + '）';
+      state.lastWrite = { page: 'fert', profile: state.profile, text: '已加入问题清单（' + state.fertQ.length + ' 条）' };
+      render(); return;
+    }
+    if (act === 'fert-qdel') {
+      var ii = Number(el.getAttribute('data-i'));
+      state.fertQ = (state.fertQ || []).filter(function (_, k) { return k !== ii; });
+      state.fertQMsg = '已删掉一条（剩 ' + state.fertQ.length + ' 条）';
+      render(); return;
+    }
     if (act === 'prep-export') { state.prepOut = exportBundle(); render(); return; }
     if (act === 'prep-summary') { state.prepOut = buildSummary(); render(); return; }
     if (act === 'docs-pick') { var dp = $('aiHint'); if (dp) dp.textContent = '原型不读本机文件；真实版本走 MinerU 六部件。'; return; }

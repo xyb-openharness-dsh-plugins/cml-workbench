@@ -1,8 +1,16 @@
 # PROTOTYPE-FIXES · P0 修复留痕（M2）
 
-日期：**2026-10-25**。对象：`prototypes/v0.2/{index.html,app.js,style.css}`（`demo-data.js` 只读未改，sha256 = `efef460e816caa485ab9d77d47b5fd13ca9649f21bda2cf2b5fbcccc2b6dac33`）。
-评审来源：`docs/PROTOTYPE-REVIEW.md`（独立评审，P0=11 / P1=18 / P2=12；X1=X2=X3=0, X4=1）。
-修复后冻结提交：`7841dba`（app.js `d025378d…` 2116 行 / index.html `7ec65de3…` 258 行 / style.css `93654520…` 296 行）。
+日期：**2026-10-25**（第二轮复审后修订）。对象：`prototypes/v0.2/{index.html,app.js,style.css,demo-data.js}`。
+评审来源：`docs/PROTOTYPE-REVIEW.md`（首评 P0=11 / P1=18 / P2=12；X1=X2=X3=0, X4=1）与 `docs/PROTOTYPE-REVIEW-2.md`（复审剩 P0=2）。
+
+**当前冻结指纹（改动后必同步本表；复审曾抓到本文件写的指纹与实物不符——这是被记 P1 的原因之一）**
+
+| 文件 | sha256 前 8 | 行数 |
+| --- | --- | --- |
+| `prototypes/v0.2/app.js` | `f1e01390` |     2173 |
+| `prototypes/v0.2/index.html` | `816d476c` | — |
+| `prototypes/v0.2/style.css` | `4c4cc7f4` |      317 |
+| `prototypes/v0.2/demo-data.js` | `1d38e5e2` | 1（单行 JSON，由 `demo/build-demo-data.mjs` 生成） |
 
 > 口径：本文件只记**实测到的数字**。凡未验证的，标「未验证」。
 
@@ -36,3 +44,22 @@
 3. 触屏拖拽分隔器（只有代码路径）。
 4. MinerU 实解析、临床试验真实数据、API 凭据（原型为界面态）。
 5. 写路径全部为**内存态**，刷新回演示数据（已在页面与 README 显式声明，不算缺陷）。
+
+## 第二轮复审（`docs/PROTOTYPE-REVIEW-2.md`）后的追加修复 · 2026-10-25 晚
+
+复审判 **P0 剩 2 条**，两条都是"假修"（子项修好、原始指控还在）：
+
+| # | 复审指控 | 根因（复审给的） | 改了什么 | 实测结果 |
+| --- | --- | --- | --- | --- |
+| P0-1 | 打印：折叠卡 DOM 里展开但**真出 PDF 只 1 页** | `style.css` 应用外壳 `html,body{height:100%}` + `overflow:hidden`，内容全在 `.main-col` 的滚动容器里，打印流只吃首屏 | 新增 `@media print` 外壳解除段：`html,body,.app,.main-col,#view` 全部 `height:auto/overflow:visible/display:block`，隐藏侧栏/顶栏/会话区/页脚/提示条 | Chrome `page.pdf()` 实测：**A 档案 9 页 / 909,797 B；B 档案 8 页 / 900,286 B**（此前 1 页 / 约 41 万 B） |
+| P0-11 | 双主体：**两个档案是两位不同患者**，界面却写"同一患者的两个记录视角" | 演示数据就是 A 周建国(男 46 e14a2) / B 林雨桐(女 31 e13a2)，文案与数据矛盾 | 按事实改文案：顶栏 aria 与说明改为"示例档案 A/B 是**两位不同患者**；双主体＝同一档案内记录可由本人或家属代记，每条带「记录者」"；`app.js` 的 `recorderDefault` 加注释说明两者并存不互相冒充；文末自检同步改写 | 界面文案与数据一致；"记录者"标记仍落条目级；切档案草稿仍清空 |
+
+### 顺带修掉的复审 P1
+- **自检清单不实**：行号引用全部过期 → 改为**不写死行号**（用 `grep 关键字` 指位）；禁词统计改为脚本复算（A/B×10 页展开后全 0）；打印一栏改为写实测页数；档案切换一栏改为写"两位不同患者"。`style.css` 字号统计改为只列已用值不再报处数。
+- **S7 无产物控件** → TFR 页新增「导出核对清单」（三块：必备/最低/门诊原话，导出文本 566 字符；**导出内禁词 0**，因为措辞改为"本清单不给结论"）＋「打印这一页」。
+- **S9 无问题清单增删** → 生育页新增输入框 +「加入清单」/「删掉这条」；实测 0→1→0，带「记录者」标记。
+- **数据源里还有判读词**（复审没抓到，我自己复测发现）：`demo/build-demo-data.mjs` 的 A 档案 min 三条状态写的是 **「未满足」**，且备注含「未达 MR4.0」——这正是首评一票否决的 K1 词。已改为三态 `未抄录` + 只抄时长/报告值；重新生成 `demo-data.js`（sha256 现 `1d38e5e2…`，js_bytes 16574），**A/B×10 页禁词全 0**。
+- **IP6 口径未定义**（复审判 5 页违规，因为没定义什么算"显式编辑"）→ 在 `docs/INTERACTION-DESIGN.md` 写明口径：只算"在本页原地打开表单"的入口，跳转型快捷入口（看卡的 `mol-new`/`ae-new`/`cost-new`）与行内三态、提交按钮、面板拖拽都不算；`scripts/probe-ip-matrix.py` 的 `ip6_counts()` 按此实现，实测 **违规 0**（fert 1 / docs 1 / 其余 0）。
+
+### 本轮四套检查器（改后实跑）
+`check-prototype.mjs` pass · `probe-ip-matrix.py` pass（failures=[]）· `probe-write-paths.py` pass · `probe-page-view.py` pass（4 档溢出 0、字号越界 0、渲染态禁词 0、无来源引用 0）

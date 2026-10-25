@@ -234,8 +234,21 @@ svg.chart .legend{fill:var(--muted)}
 .track-dense{background:#2f6f6626;border-style:solid;color:var(--fg)}
 
 /* 打印：折叠卡内容靠 JS 在打印媒体下真正展开（display:grid 对闭合 details 无效） */
-@media print{.phase-detail{display:grid!important} summary::after,.ph-hint{display:none} .phase-fold{break-inside:avoid}
-  .more{border-style:solid} .more>summary::after{content:""}}
+/* 打印：先解除"应用外壳"的高度/溢出约束（body/html/.app/.main-col 都是视口内滚动），
+   否则打印只出第一屏 1 页——折叠卡在 DOM 里可见也不进打印流。 */
+@media print{
+  html,body{height:auto!important;min-height:0!important;overflow:visible!important;display:block!important}
+  .app{display:block!important;overflow:visible!important;height:auto!important;min-height:0!important}
+  .main-col{display:block!important;overflow:visible!important;height:auto!important;min-height:0!important}
+  #view{display:block!important;overflow:visible!important;height:auto!important}
+  .sidebar,.topbar,.session,.splitter,.skip,.footer,.mem-notice,.agent-log{display:none!important}
+  .phase-detail{display:grid!important}
+  summary::after,.ph-hint{display:none}
+  .phase-fold{break-inside:avoid}
+  .more{border-style:solid}
+  .more>summary::after{content:""}
+  details:not([open])>.phase-detail{display:grid!important}
+}
 
 /* ---------- 热度条（依从日历）---------- */
 .heat{display:flex;flex-wrap:wrap;gap:4px}

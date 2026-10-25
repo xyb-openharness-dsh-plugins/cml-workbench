@@ -14,10 +14,10 @@
 <header class="topbar">
   <div class="brand">小粒宝 GranPal <span class="ver">v0.1.0</span></div>
 
-  <nav class="profiles" aria-label="档案切换（双主体：同一患者的两个记录视角）">
+  <nav class="profiles" aria-label="演示档案切换（示例档案 A / B 是两位不同患者；双主体＝每条记录可由本人或家属代记，标注见「记录者」）">
     <button type="button" class="chip" data-act="profile" data-p="A">档案 A · 患者本人视角</button>
     <button type="button" class="chip" data-act="profile" data-p="B">档案 B · 家属代记视角</button>
-    <span class="muted subj-note">双主体＝记录视角，不是两位患者；每条记录带「记录者」标记，切档案会清空未提交草稿。</span>
+    <span class="muted subj-note">示例档案 A（周建国·男 46·e14a2）与 B（林雨桐·女 31·e13a2）是<strong>两位不同患者</strong>的不同病程形态；「双主体」指同一档案内记录可由本人或家属代记，每条带「记录者」；切档案清空未提交草稿。</span>
   </nav>
 
   <div class="topbar-right">
@@ -203,56 +203,56 @@
    （合计 A 4×5=20，B 3×5=15，共 35 块，全部 PASS）。无内容写「无 + 说明」，无省略块。
    summary 格式：● 阶段名 · 日期 · 一句话概要 · 展开细节，箭头由 ::after 的 ▸/▾ 输出（无 emoji）。
    展开区 grid repeat(2,minmax(0,1fr))，≤900px 单列。
-   @media print 规则写在 style.css L204，逐字符为：
-   @media print{.phase-detail{display:grid!important} summary::after,.ph-hint{display:none} .phase-fold{break-inside:avoid}}
-   （HTTP 同源下从 CSSOM 读回并校验通过：Chrome 序列化为 @media print{.phase-detail{display:grid!important;}summary::after,.ph-hint{display:none;}.phase-fold{break-inside:avoid;}}）
+   打印：@media print 在 style.css「打印」段（grep 关键字 `@media print`）。**2026-10-25 修订**：原规则只在打印媒体下展开 .phase-detail，
+   但应用外壳（html/body/.app/.main-col 的 height:100% + overflow:hidden）让打印流只出首屏，实测 PDF **1 页**。
+   现规则先解除外壳高度/溢出约束并隐藏侧栏/顶栏/会话区，实测 Chrome 出 PDF：**A 档案 9 页 / B 档案 8 页**（此前 1 页）。
 
-5) 图表 SVG 数 = 6（默认渲染；A/B 各 3：dash 1、mol 1、cost 1）
+5) 图表 SVG 数 = 6（分子线/看板/费用各 1，A/B 各 3；trial 页无图表属预期）
    全部由 app.js 手写生成，根元素均带 class="chart"（DOM 断言：svg:not(.chart) = 0）。
-   折线走自实现 Fritsch–Carlson 单调三次插值 smoothPath(points)（app.js L198，含 τ=3/√s 单调性修正，不依赖任何库）；
+   折线走自实现 Fritsch–Carlson 单调三次插值 smoothPath(points)（app.js 内 `function smoothPath`，含单调性修正，不依赖任何库）；
    X 轴按日期、Y 轴按报告值（线性为默认，另给对数刻度切换）；趋势线单色（accent 语义色单一取值），无红绿好坏色阶，参考线灰虚线。
    分类值（kind==='qual'/'grade'，如 ae）不画进曲线，只按事件列出。
    BCR::ABL1 图可比性分段：相邻两点 lab 不同或 is_std≠1 → 断开折线并在断点标注「不可比（实验室/标化不同）」；
    图上图例给出四要素 unit / lab / is_std / sens（缺项显示「未记录」）。演示开关：mol 页「可比性演示」按钮（只改视图层，不改数据）。
    参考线 3/6/12 月为灰虚线，图上与图下都标「医生给的里程碑时间点，不是判读线」。
 
-6) filterPrivate 出现位置（app.js，可 grep）
-   L92  函数定义 function filterPrivate(list, exit)（出口白名单 export / ai / summary，未知出口抛错）
-   L421 出口② AI 上下文：buildAiContext() 内 filterPrivate(recs, 'ai')
-   L1176 出口① 导出：exportBundle()（fetchExport() 同源）内 filterPrivate(recs, 'export')
-   L1183 出口③ 摘要：buildSummary() 内 filterPrivate(recs, 'summary')
-   L447 / L1336 界面与导出的同规则文案与 API 暴露
-   L902-904（副作用页）、L1007-1009（生育页）、L1051-1053（复诊准备页）用同一函数展示三出口保留/过滤计数
-   规则落地：fert 条目默认 visibility='private'；副作用私密条目默认 visibility='private'（A/B 各 1 条原型示例，页面带「私密」标记）。
+6) filterPrivate（app.js，用 grep 定位，不写死行号——行号会随修订漂移）
+   `function filterPrivate(list, exit)`：出口白名单 export / ai / summary，未知出口抛错。
+   三出口调用点：`filterPrivate(recs, 'ai')`（buildAiContext）、`filterPrivate(recs, 'export')`（exportBundle / fetchExport）、`filterPrivate(recs, 'summary')`（buildSummary）。
+   界面与导出用同一函数展示保留/过滤计数（副作用页、生育页、复诊准备页三处）。
+   规则落地：fert 条目默认 visibility='private'；副作用私密条目默认 visibility='private'（A/B 各 1 条示例，页面带「私密」标记）。
    fert / ae / prep 三页均明写「私密内容不进导出与 AI」。
 
-7) 禁词自检结果（A+B × 10 页渲染后的 textContent 逐词计数）
-   达标 0 ｜ 未达标 0 ｜ 正·常 0 ｜ 风·险 0 ｜ 复·发 0 ｜ 可以停药 0 ｜ 建议停药 0 ｜ 在线 0
-   异·常 1 处（B/mol 副作用总结块，形态：q.quote 内「肝功能……（ALT 升高）」，同条带 span.src「来源：肝功能 2025-11-20.pdf 报告原文 · 文件 B-D4」）
-   建·议 4 处，全部在 q.quote 内且同条带来源：
-     A/mol、B/mol 各 1：q.quote「不……根据 BCR::ABL1 IS 的单次、单一数值做出转换治疗的决策」+ 来源「中国 CML 诊疗指南（2025 版）· 分子学监测章节」
-     A/fert、B/fert 各 1：q.quote「TKI 期间不……计划妊娠……」+ 来源列「血液科门诊 2026-02-20 / 2026-04-09（原话）」
-   demo-data.js 中 B 档案 viewpoints 2026-05-20 一条含患者原话敏感词（非医生引语），按禁词规则不在界面渲染，仅在数据层保留；该文件未做任何修改（sha256 efef460e816caa485ab9d77d47b5fd13ca9649f21bda2cf2b5fbcccc2b6dac33，git 状态未变）。
+7) 禁词自检结果（A+B × 10 页渲染后、展开全部折叠卡，逐词计数；2026-10-25 用脚本复算）
+   达标 0 ｜ 未达标 0 ｜ 可以停药 0 ｜ 建议停药 0 ｜ 无需就医 0 ｜ 治愈率 0 ｜ 反复 0 ｜ 风险 0（A、B 两档均 0）
+   带来源的 q.quote 引用不当禁词——所有医生原话/报告原文都在 `<q class="quote">` 内且紧跟 `<span class="src">来源：…</span>`；
+   引用态断言：`q.quote` 无 `.src` 的条数 = 0。
+   demo-data.js 中 B 档案含患者原话敏感词，界面不渲染；该文件未修改（sha256 efef460e…，git 状态未变）。
 
 8) 其他硬规则实跑结果
-   版本字面量 v0.1.0：顶栏与页脚都在（整页出现 7 次）；页脚含构建日 2026-10-25 与数据目录状态「~/GranPal/病历资料 · 已挂载（本机）」。
-   页脚贴底：1280 视口下短页面 #trial，footer.bottom = 813 = 视口高 813（PASS）；实现为 body flex column + margin-top:auto + 面板内部滚动。
-   字号：style.css 全部 font-size 声明只有 12.5px(29 处) / 13px(5 处) / 15px(5 处)；浏览器里遍历全部元素 computed font-size，越界 0 个（1280/900/700 三档均 PASS）。
-   会话区：默认 35%（实测 35.0），范围 25% 到 45%，鼠标拖拽（实测 30%）、键盘 ←/→ 步进 1%、Home/End 到边界 25/45 均写入 localStorage['granpal.panelWidth']，首屏即写入默认值；可收起/重开（hidden 属性）。
-   hidden：全站用原生 hidden + [hidden]{display:none!important}（style.css L20，CSSOM 读回校验通过；设置弹窗 computed display=none）。
-   窄宽：≤900px 单列（实测 grid-template-columns 单值）；≤720px 表格转键值行（td display=flex，::before 取 data-th）、图表 min-height 180px、可横向滚动（.chart-wrap overflow-x:auto）；三档宽度下 documentElement.scrollWidth ≤ clientWidth（无横向溢出）。
-   状态：mol 有空态/单点/错误态（「还没有分子结果，先记一笔复查」「再记一次才成趋势」「候选被拒收…草稿保留」）；打卡有空态/单点/写失败重试；docs 有解析失败转手工补录；TFR 三态可切换。
-   副作用词表按当前用药：A（当前=达沙替尼）→ dasatinib + withdrawal，共 14 词条；B（当前=停药）→ 只 withdrawal，共 5 词条；全表未平铺，页面显示被过滤条目数。
-   TFR 页：必备 5 条 + 最低 5 条 + 最佳项单列 + 密测轨道三行，逐条「报告字段照抄位 + 状态（已确认/未确认/不适用）」；全页 0 处停药方向性文案。
-   HVT-11 信号卡（看板资料区）：4 条静态事实，逐条带来源与版本 GL-CN-2025，状态全部标「未核验」，页脚说明不做个体判断。
-   档案切换：A（患者本人 46 岁男性 伊马替尼→达沙替尼）/ B（家属代记 31 岁女性 TFR 停药尝试），切换后 10 页数据随档案变化（DOM 断言 B 档案看板显示「林雨桐」PASS）。
+   版本字面量 v0.1.0：顶栏与页脚都在；页脚含构建日 2026-10-25 与数据目录状态「~/GranPal/病历资料 · 已挂载（本机）」。
+   页脚贴底：短页面（#trial）footer.bottom = 视口高（flex column + margin-top:auto + 面板内部滚动）。
+   字号：style.css 只用 12.5px / 13px / 15px；浏览器遍历全部元素 computed font-size，越界 0 个。
+   会话区：默认 35%，范围 25%–45%，拖拽/键盘 ←→ 步进 1%/Home/End 到边界，写入 localStorage['granpal.panelWidth']；可收起/重开（原生 hidden）。
+   hidden：全站用原生 hidden + `[hidden]{display:none!important}`（style.css 顶部的 reset 段）。
+   窄宽：≤900px 单列；≤720px **所有表格**转键值行（thead 隐藏 + td::before 取 data-th）、图表在 .chart-wrap 内横向滚动；
+     **1440/1024/800/420 四档 × 10 页 × 展开态，横向溢出全部 = 0**（2026-10-25 修订：此前 420px 下分子线明细表溢出 32px）。
+   状态：mol 有空态/单点/错误态；打卡有空态/单点/写失败重试；docs 有解析失败转手工补录；TFR 三态可切换。
+   副作用词表按当前用药：A（当前=达沙替尼）→ dasatinib + withdrawal；B（当前=停药）→ 只 withdrawal；页面显示被过滤条目数。
+   TFR 页：必备 5 条 + 最低 5 条 + 最佳项单列 + 密测轨道三行，逐条「报告字段照抄位 + 状态」；全页 0 处停药方向性文案。
+   HVT-11 信号卡（看板）：4 条静态事实，逐条带来源与版本 GL-CN-2025，状态全部标「未核验」，页脚不做个体判断。
+   档案切换：**A 与 B 是两位不同患者**（A 周建国·男 46·e14a2；B 林雨桐·女 31·e13a2），不是同一人的两个视角——
+     「双主体」指**同一档案内**一条记录可由本人或家属代记，每条带「记录者」标记；切档案清空未提交草稿（实测 A 填「草稿药A」→ 切 B 后值 = 空）。
+     2026-10-25 修订：此前界面文案写「同一患者的两个记录视角」而数据是两位患者，属声明与实现矛盾，已按事实改文案。
 
 9) 未验证 / 已知取舍（如实）
-   a. 「大字（浏览器 125%/150%）不出现横向滚动条、按钮触控高度 ≥44px」：只用 CSS 与三档宽度验证，未在真实浏览器缩放 125%/150% 下实测。
-   b. 打印：只校验了 @media print 规则源码与 CSSOM 解析；未真正出 PDF 核对分页与「一页拿到完整病程」。
+   a. 「大字（浏览器 125%/150%）不出现横向滚动条、按钮触控高度 ≥44px」：只用 CSS 与四档宽度验证，未在真实浏览器缩放 125%/150% 下实测。
+   b. 打印：已用 Chrome 出 PDF 取证（A 9 页 / B 8 页、约 900KB）。但 Chromium 的 PDF 文本层为 Type3 字体、无 ToUnicode，
+      中文无法从 PDF 里逐字抽取，故「五块文本确实印在纸上」只能由页数与渲染态可见性合并举证，未做 PDF 文本层逐字校验。
    c. 会话区拖拽在触屏上只做了代码路径（touchstart/move/end），未在触屏设备实测。
    d. 本原型不连接任何后端：打卡、更正、候选接受、导出都是前端内存态，刷新即回到 demo 数据；未做真实写库与失败恢复。
    e. 影像发现块按「不代拟结论」处理：A 档案 2026-09-02 胸部 CT 只写文件与「结论原文待逐字核对入库」；B 档案影像块为「无 + 说明」。
    f. MinerU 六部件、临床试验数据（trials 为空）、API 凭据都只是界面态，未接真实服务。
+
 ===============================================================================================
 -->
