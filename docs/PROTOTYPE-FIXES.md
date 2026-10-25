@@ -7,8 +7,8 @@
 
 | 文件 | sha256 前 8 | 行数 |
 | --- | --- | --- |
-| `prototypes/v0.2/app.js` | `e53cbfeb` | 2726 |
-| `prototypes/v0.2/index.html` | `99f9b62e` | 300 |
+| `prototypes/v0.2/app.js` | `cac3401e` | 2762 |
+| `prototypes/v0.2/index.html` | `54d17575` | 308 |
 | `prototypes/v0.2/style.css` | `4d7f33bc` | 406 |
 | `prototypes/v0.2/demo-data.js` | `d4fbc2b1` | 2（34046 字节） |
 
@@ -58,7 +58,7 @@
 - **自检清单不实**：行号引用全部过期 → 改为**不写死行号**（用 `grep 关键字` 指位）；禁词统计改为脚本复算（A/B×10 页展开后全 0）；打印一栏改为写实测页数；档案切换一栏改为写"两位不同患者"。`style.css` 字号统计改为只列已用值不再报处数。
 - **S7 无产物控件** → TFR 页新增「导出核对清单」（三块：必备/最低/门诊原话，导出文本 566 字符；**导出内禁词 0**，因为措辞改为"本清单不给结论"）＋「打印这一页」。
 - **S9 无问题清单增删** → 生育页新增输入框 +「加入清单」/「删掉这条」；实测 0→1→0，带「记录者」标记。
-- **数据源里还有判读词**（复审没抓到，我自己复测发现）：`demo/build-demo-data.mjs` 的 A 档案 min 三条状态写的是 **「未满足」**，且备注含「未达 MR4.0」——这正是首评一票否决的 K1 词。已改为三态 `未抄录` + 只抄时长/报告值；重新生成 `demo-data.js`（sha256 现 `1d38e5e2…`，js_bytes 16574），**A/B×10 页禁词全 0**。
+- **数据源里还有判读词**（复审没抓到，我自己复测发现）：`demo/build-demo-data.mjs` 的 A 档案 min 三条状态写的是 **「未满足」**，且备注含「未达 MR4.0」——这正是首评一票否决的 K1 词。已改为三态 `未抄录` + 只抄时长/报告值；重新生成 `demo-data.js`（当日为 `1d38e5e2…`/16574B；**此后数据层又改过两轮**——补外院 pcr 记录、加指标目录与入组档案，实物现为 `d4fbc2b1`/34046B，指纹以 `shasum` 为准，本文件不追写具体值），**A/B×10 页禁词全 0**。
 - **IP6 口径未定义**（复审判 5 页违规，因为没定义什么算"显式编辑"）→ 在 `docs/INTERACTION-DESIGN.md` 写明口径：只算"在本页原地打开表单"的入口，跳转型快捷入口（看卡的 `mol-new`/`ae-new`/`cost-new`）与行内三态、提交按钮、面板拖拽都不算；`scripts/probe-ip-matrix.py` 的 `ip6_counts()` 按此实现，实测 **违规 0**（fert 1 / docs 1 / 其余 0）。
 
 ### 本轮四套检查器（改后实跑）
@@ -73,8 +73,8 @@
 
 | 文件 | sha256 前 8 | 行数 |
 | --- | --- | --- |
-| `prototypes/v0.2/app.js` | `e53cbfeb` | 2726 |
-| `prototypes/v0.2/index.html` | `99f9b62e` | 300 |
+| `prototypes/v0.2/app.js` | `cac3401e` | 2762 |
+| `prototypes/v0.2/index.html` | `54d17575` | 308 |
 | `prototypes/v0.2/style.css` | `4d7f33bc` | 406 |
 | `prototypes/v0.2/demo-data.js` | `d4fbc2b1` | 2（34046 字节） |
 
@@ -106,3 +106,31 @@
 
 - `scripts/check-prototype.mjs`：字号断言由「一律 12.5–15」改为**按选择器豁免**（`NUMERAL_SELECTORS = ['\.mval']`），因为 24 号 §5 要求数字约 33px。豁免必须逐选择器声明，新增豁免须记入 `docs/DEV-REQUIREMENTS-2026-10-25.md` §七。
 - `scripts/probe-page-view.py`、`scripts/probe-ip-matrix.py`、`scripts/probe-write-paths.py`：路由表补 `onechart`，使新页与既有 10 页受同一套宽度/溢出/禁词/入口扫描。
+
+## 2026-10-25 第四轮独立评审（P0=5）后的修复
+
+评审报告 `docs/PROTOTYPE-REVIEW-4.md`（773 行）。**P0=5 / P1=11 / P2=3，不能签 G2。**
+五条 P0 全部修复并实测复验，另修 P1-1/P1-6/P1-7 三条检查器口径缺陷。
+
+| # | P0 | 根因 | 修法 | 复验 |
+| --- | --- | --- | --- | --- |
+| P0-1 | **一图秀曲线一条都没画出来**（穷举 7 指标×3 窗×A/B 全部 `d=""`、bbox 0×0） | `smoothPath` 只认 `{x,y}` 对象；一图秀（`app.js:1969`）与指标卡背面（`:1795`）传的是 `[x,y]` 数组 → filter 全丢 | `smoothPath` 入口归一化两种形态（`Array.isArray` → `{x,y}`） | A `d` 长 [90,424]、bbox 379.6×194.7；B [238,234]、bbox 564.0×77.3 |
+| P0-2 | **违反 16 号 R3**：关治疗条后每个点 `cy` 都变（pcr 2026-07-18: 218.7→240.4） | `plotH = H - padT - padB - (treated ? 22 : 0)` 让治疗条压缩了绘图区 | 22px 永远留给治疗条那一行，与开关无关 | A/B 两档：关治疗条后 `d` **与** `cy` 逐条相同 |
+| P0-3 | 归一化基线取**窗口内**首点，图例却标「全期口径」（切 6m 后基线 42.600→8.400） | `base` 取自 `inWindow()` 之后 | `base` 取**全期首点**（`m.points` 首位），图例改「全期首点口径，不随窗口变」 | 切 6m 前后图例字符串完全相同 |
+| P0-4 | **翻面状态跨档案串档**（A 翻开 pcr → 切 B，B 的 pcr 卡进来就是开的）——第三轮 P0-R1 同类缺陷在新能力复发 | `state.molFlipped` 是全局 Set | 改 `molFlippedByProfile: {A:Set, B:Set}`，与 `fertQByProfile` 同做法 | A 翻卡 `['true','false',…]` → 切 B 全 false → 切回 A 仍 `true` |
+| P0-5 | **分类指标进数值轴**：副作用记录图例漏 `基线 NaN`、4 点 cy 全 24.0 顶到最上 | 归一化把 `kind:'qual'` 当数值算 | 分类指标从曲线剔除，单列文字说明「不进坐标轴」（27 号 §1） | 无 NaN；选中 ae 时出现「分类记录」说明 |
+| P1-1 | `allEmpty` 判的是**全部记录**为空而非**窗口内**为空（R2 分支没实现） | 先判空后过滤 | 先 `inWindow` 再判空；并逐条给"窗口内无记录"说明 | `verify-onechart.py` V6（当前数据下记 SKIP，不记 PASS） |
+| P1-6 | 检查器数**源码字符串**里 `class="chart"` 出现次数，并把错的「6」锁成断言给自己背书（源码实际 9 处、渲染 8 个） | 断言口径错层 | 改为只断言"生成 svg root"，数量交给渲染态探针；**并反向断言自检里不许写死图表数量** | 植入写死数字 → `chart/count-hardcoded` 报错 |
+| P1-7 | `index.html` 与 FIXES 仍写 `1d38e5e2`/16574B，实物 `d4fbc2b1`/34046B | 数据改了两轮，文档没跟 | 两处都不再写死，改为指向 `shasum` 命令；**并加 `fingerprint/hardcoded` 反向断言** | 植入 sha256 前 8 → 报错 |
+
+### 更值钱的一条：两条自证都是"被空值骗过的真"
+
+R3 与「全期口径」这两条，在我方自检与第三轮复审里都曾"通过"。原因不是没测，而是**测的东西是空的**：
+`d=""` 时比较前后字符串必然相等，于是"曲线不变"永远为真。
+
+**防复发措施（已落地）**：
+- 新增 `scripts/verify-onechart.py`（`npm run check:render`）：V1 **先断言 `d` 非空**再断言不变；V2 断言 bbox > 0；V3 同时比 `d` 与 `cy`；V4 比图例基线；V5 查 NaN；V6 空窗口（触发不了记 SKIP 不记 PASS）。
+- 负向验证：把 `smoothPath` 还原成旧实现 → `verify-onechart.py` 变红（CAUGHT）。
+- `check-prototype.mjs` 加 `chart/smoothpath-input`：静态断言 `smoothPath` 做了入参归一化。
+
+**教训**：断言"不变"之前必须先断言"有东西"。凡比较两态相同，都要先证明两态非空/非零。

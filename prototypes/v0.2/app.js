@@ -24,7 +24,9 @@
   var MEM_NOTICE = '原型为内存态，刷新回到演示数据';
 
   var state = {
-    molFlipped: new Set(),
+    /* P0-4（第四轮评审，违反 24 号 MT13）：原为全局 Set，A 翻开 pcr 卡 → 切 B → B 的 pcr 卡进来就是开的。
+       与 fertQByProfile 同一做法：按档案分桶，切档案各看各的。 */
+    molFlippedByProfile: { A: new Set(), B: new Set() },
     oneSel: ['pcr', 'wbc'],
     oneRange: 'all',
     oneToggles: { treatment: true },
@@ -442,7 +444,14 @@
 
   /* ================= 图表：Fritsch–Carlson 单调三次插值 ================= */
   function smoothPath(points) {
-    var p = (points || []).filter(function (o) { return o && isFinite(o.x) && isFinite(o.y); });
+    /* 两种入参形态都接受：{x,y} 对象（趋势页）与 [x,y] 数组（一图秀 / 指标卡背面）。
+       2026-10-25 第四轮评审 P0-1：调用方传的是数组，原实现只认对象，filter 全丢 → d="" 一条线都没画，
+       而当时的 R3 断言把空字符串当成"没变"从而自证为真。归一化放在入口，避免再被某一种形态打穿。 */
+    var p = (points || []).map(function (o) {
+      if (!o) return null;
+      if (Array.isArray(o)) return { x: Number(o[0]), y: Number(o[1]) };
+      return o;
+    }).filter(function (o) { return o && isFinite(o.x) && isFinite(o.y); });
     if (p.length === 0) return '';
     if (p.length === 1) return 'M' + r2(p[0].x) + ' ' + r2(p[0].y);
     var n = p.length, dx = [], dy = [], m = [], i;
@@ -1711,7 +1720,7 @@
      合同（改前必读）：
      - 外卡固定高 276px；翻转前后 getBoundingClientRect 完全一致（靠固定高 + 绝对定位双面）。
      - 真 3D：外层 perspective:1100px，内层 preserve-3d，点整卡 rotateY(180deg)。
-     - 每卡独立：state.molFlipped 是 Set(code)，不存 DOM、不重渲染。
+     - 每卡独立：state.molFlippedByProfile[profile] 是 Set(code)，不存 DOM、不重渲染，且按档案隔离。
      - 结构必须 button > span.inner > (span.front + span.back)：内容若是 button 的兄弟节点就结构上不可能翻转。
      - 隐藏面 aria-hidden + inert，键盘 Tab 不会停到看不见的一面。
      - 无记录写"还没有记录"（不显示 0——0 是有效值）；单点写"暂无可比较的前次记录"。 */
@@ -1807,7 +1816,7 @@
   /* 一张卡：button 外壳（可聚焦可翻）> inner > front + back。
      注意不要在里面再嵌 button（24 号 §5），背面来源信息用 span。 */
   function metricCard(m) {
-    var flipped = state.molFlipped.has(m.key);
+    var flipped = (state.molFlippedByProfile[state.profile] || new Set()).has(m.key);
     return '<button type="button" class="mcard' + (flipped ? ' flipped' : '') + '" data-act="mcard" data-key="' +
       esc(m.key) + '" aria-pressed="' + (flipped ? 'true' : 'false') + '" role="group" tabindex="0"' +
       ' aria-label="' + esc(m.name) + '，点一次翻面看历次记录，再点返回">' +
@@ -1930,19 +1939,37 @@
 
   function chartPanel(sel) {
     if (!sel.length) return '<p class="empty">还没有选择要看哪几条指标。上面勾选 1–4 项后这里会出现叠看曲线。</p>';
-    var ms = sel.map(metricByKey);
-    /* R2：窗口内没数据 → 空态（不是"数值 0"） */
-    var allEmpty = ms.every(function (m) { return !(m.points || []).length; });
-    if (allEmpty) return '<p class="empty">选中的指标在所选时间窗内还没有记录。</p>';
+    var picked = sel.map(metricByKey);
+    /* P0-5（第四轮评审）：分类指标（kind=qual/grade，如「副作用记录」）是文本事件，
+       27 号 §1 要求"分类变量只画节点、不进数值轴"。原实现在归一化里把它当数值算 → 图例漏出"基线 NaN"、
+       4 个点 cy 全顶到最上。这里把它们从曲线里剔除，单列说明，不进坐标系。 */
+    var nonNumeric = picked.filter(function (m) { return m.kind === 'qual' || m.kind === 'grade'; });
+    var ms = picked.filter(function (m) { return !(m.kind === 'qual' || m.kind === 'grade'); });
+    if (!ms.length) {
+      return '<p class="empty">选中的指标都是分类记录（如副作用事件），图上只按事件列出、不画坐标轴。' +
+        '要看事件明细去「副作用日志」页。</p>';
+    }
+    /* R2/P1-1：窗口内没数据 → 空态（不是"数值 0"）。
+       注意必须先按窗口过滤再判空 —— 原来判的是"指标全部记录是否为空"，
+       若某指标只在窗外有记录，会画出一张没有任何曲线的空图。 */
+    var windowed = ms.map(function (m) { return inWindow(m.points || [], state.oneRange || 'all'); });
+    var allEmpty = windowed.every(function (arr) { return !arr.length; });
+    if (allEmpty) return '<p class="empty">选中的指标在所选时间窗内还没有记录。换个时间窗，或先在分子线／复查记录里补一条。</p>';
 
     var W = 640, H = 300, padL = 56, padR = 20, padT = 24, padB = 56;
     var series = ms.map(function (m, i) {
-      var pts = inWindow(m.points || [], state.oneRange || 'all').slice().sort(function (a, b) { return t(a.d) - t(b.d); });
-      var base = pts.length ? Number(pts[0].v) : 0;
-      return { m: m, pts: pts, base: base, color: catMeta(m.cat).color, idx: i };
+      var pts = windowed[i].slice().sort(function (a, b) { return t(a.d) - t(b.d); });
+      /* P0-3（第四轮评审）：图例写「全期口径」，基线就必须取**全期首点**，不能取窗口内首点——
+         否则切到 6m 后同一个点的 cy 会变，图例那句话就是假的。 */
+      var allPts = (m.points || []).slice().sort(function (a, b) { return t(a.d) - t(b.d); });
+      var base = allPts.length ? Number(allPts[0].v) : 0;
+      return { m: m, pts: pts, base: base, color: catMeta(m.cat).color, idx: i, nonNumeric: false };
     });
     var treated = state.oneToggles.treatment;
-    var plotH = H - padT - padB - (treated ? 22 : 0);
+    /* P0-2（第四轮评审，违反 16 号 R3）：原先写成 `plotH = H - padT - padB - (treated ? 22 : 0)`，
+       开关治疗条会压缩绘图区，导致**每个点的 cy 都变**（实测 pcr 2026-07-18: 218.7→240.4），
+       而自检却因为曲线 d 为空串而自证"d 不变 True"。治疗条必须占**独立行**，不参与曲线坐标系。 */
+    var plotH = H - padT - padB - 22; /* 22px 永远留给治疗条那一行，与开关无关 */
     var svg = '<svg class="chart" viewBox="0 0 ' + W + ' ' + H + '" width="100%" height="' + H +
       '" role="img" aria-label="选中的 ' + ms.length + ' 条指标归一化叠看曲线">';
     svg += '<line x1="' + padL + '" y1="' + (padT + plotH) + '" x2="' + (W - padR) + '" y2="' + (padT + plotH) + '" stroke="#ded9d1"></line>';
@@ -1996,8 +2023,15 @@
     /* 图例：标口径 */
     h += '<div class="legend-row">' + series.map(function (s2) {
       return '<span class="legend-item"><span class="dot" style="background:' + esc(s2.color) + '"></span>' +
-        esc(s2.m.name) + '<span class="muted">（基线 ' + fmtVal(s2.m, s2.base) + ' ' + esc(s2.m.unit || '') + ' · 全期口径）</span></span>';
+        esc(s2.m.name) + '<span class="muted">（基线 ' + fmtVal(s2.m, s2.base) + ' ' + esc(s2.m.unit || '') +
+        ' · 全期首点口径，不随窗口变）</span></span>';
     }).join('') + '</div>';
+    /* P0-5：分类指标不进坐标系，单列说明（不静默丢弃） */
+    if (nonNumeric.length) {
+      h += '<p class="note">以下选中项是<strong>分类记录</strong>（文本事件，没有数值大小），按 27 号 §1 不画进坐标轴：' +
+        nonNumeric.map(function (m) { return esc(m.name) + '（' + (m.points || []).length + ' 条）'; }).join('、') +
+        '。事件明细见「副作用日志」页。</p>';
+    }
     return h;
   }
 
@@ -2419,7 +2453,9 @@
       if (!card) return;
       var key = card.getAttribute('data-key');
       var on = card.getAttribute('aria-pressed') === 'true';
-      if (on) { state.molFlipped.delete(key); } else { state.molFlipped.add(key); }
+      var set = state.molFlippedByProfile[state.profile];
+      if (!set) { set = state.molFlippedByProfile[state.profile] = new Set(); }
+      if (on) { set.delete(key); } else { set.add(key); }
       card.classList.toggle('flipped', !on);
       card.setAttribute('aria-pressed', on ? 'false' : 'true');
       var fr = card.querySelector('.front'), bk = card.querySelector('.back');

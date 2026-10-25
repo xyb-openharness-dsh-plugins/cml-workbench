@@ -40,8 +40,22 @@ if (fails.length === 0) {
   if (/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(src)) F('foldout/emoji', '出现 emoji（summary 折叠指示只能用 ::after ▸/▾）'); else O('foldout/emoji', '无 emoji');
 
   /* --- SVG 图表 --- */
-  const chartRoots = (src.match(/class="chart"/g) || []).length;
-  if (chartRoots < 1) F('chart/root', '没有 class="chart" 的 SVG 根'); else O('chart/root', `class="chart" 出现 ${chartRoots} 次`);
+  /* P1-6（第四轮评审）：原实现数是**源码字符串**里 `class="chart"` 出现几次，
+     并且把「= 6」写进了 index.html 的自检 —— 那是拿源码计数给自检背书，
+     而源码里 `class="chart"` 实际出现 9 次（含模板与 chartSVG 里各一处），渲染态是 8 个 SVG。
+     所以这里只做"存在性"断言（必须有、且不是硬编码数字），**具体数量交给渲染态探针**：
+     `scripts/probe-page-view.py` 逐页数 `svg.chart`，那才是 DOM 真值。 */
+  if (!/class="chart"/.test(js)) F('chart/root', 'app.js 里没有生成 class="chart" 的 SVG 根');
+  else O('chart/root', 'app.js 生成 svg root class="chart"（数量以 probe-page-view.py 的渲染态计数为准）');
+  /* 反向断言：自检文档里不许写死图表数量（写死就必然过期，第四轮实际过期成 6 vs 8） */
+  const idxHtml = readFileSync(join(P2, 'index.html'), 'utf8');
+  const staleCount = idxHtml.match(/图表\s*SVG\s*数\s*=\s*\d+/);
+  if (staleCount) F('chart/count-hardcoded', `自检里写死了图表数量「${staleCount[0]}」——必须改为"以渲染态探针为准"（该数字已过期一次）`);
+  else O('chart/count-hardcoded', '自检不写死图表数量（避免过期）');
+  /* 同类防复发：自检里不许写死 sha256 前 8（数据层每改一次就过期一次，已复发两轮） */
+  const staleHash = idxHtml.match(/sha256[^\n]{0,20}[0-9a-f]{8}/i);
+  if (staleHash) F('fingerprint/hardcoded', `自检里写死了 sha256「${staleHash[0].trim()}」——数据层一改就过期，改为只指向 shasum 命令`);
+  else O('fingerprint/hardcoded', '自检不写死 sha256（避免过期复发）');
   if (!/fritsch|Fritsch|monotone/i.test(js)) F('chart/smooth', '未找到 Fritsch–Carlson / monotone 平滑实现'); else O('chart/smooth', '有单调插值实现');
   if (!/is_std|isStd/.test(js)) F('chart/comparability', '未读取 is_std（可比性四要素）'); else O('chart/comparability', '读取了可比性要素');
   if (!/不可比/.test(js)) F('chart/segbreak', '缺少"不可比"分段标注'); else O('chart/segbreak', '有不可比分段标注');
@@ -116,30 +130,31 @@ if (fails.length === 0) {
      例外：**否定式说明**（"不给匹配度""不是匹配度""无匹配度百分比"）是合规的，必须放行——
      否则免责说明本身会被当成违规（LESSONS 第 10 类：免责措辞自己踩禁词）。
      判法：先剥离否定语境（含 "不/无/非/别" 的同一短语窗口），再扫。 */
-  const trialBan = ['匹配度百分比', '高匹配', '最适合', '不符合条件', '按匹配度排序', '综合评分', '健康指数'];
-  const negCtx = /(不给|不是|不按|不输出|无|不提供|不写|不做)[^。；\n]{0,20}$/;
-  const trialHits = [];
-  for (const w of trialBan) {
-    let idx = -1;
-    while ((idx = visible.indexOf(w, idx + 1)) !== -1) {
-      const before = visible.slice(Math.max(0, idx - 28), idx);
-      if (negCtx.test(before)) continue; // 否定语境，合规
-      trialHits.push(w);
-    }
-  }
-  // 「匹配度」+ 数字/百分号 = 真正的匹配度百分比（比只禁字面"匹配度百分比"更严，
-  //  因为写成 `匹配度 82%` 会绕过短语匹配 —— 这是负向测试抓出来的）
-  const pctHits = [...visible.matchAll(/匹配度[^0-9%。；\n]{0,6}[0-9]{1,3}\s*[%％]/g)]
-    .map((m) => m[0]).filter((t) => {
-      const i = visible.indexOf(t);
-      return !negCtx.test(visible.slice(Math.max(0, i - 28), i));
-    });
+  /* 判法（第四轮评审后重写）：**先剥离显式免责搭配，再扫全量**。
+     原实现用"禁词前 28 字符是否含否定词"来判定，两个毛病：
+       ①「不符合条件」自带「不」字，位置窗口法在特定上下文里会自我放行；
+       ②窗口宽度是拍脑袋的，换个句式就漏。
+     现改为白名单式：只有下列**完整搭配**算合规，把它们从文本里整段删掉后，
+     剩下的任何禁词命中都是真违规。加白名单必须在这里逐条写出来（可审计）。 */
+  const allowedCollocations = [
+    '不给匹配度百分比', '不给匹配度', '不是匹配度', '不按匹配度排序', '不按匹配度',
+    '不输出匹配度百分比', '无匹配度百分比', '不提供匹配度', '不写匹配度',
+    '按匹配度排序等于给推荐', /* 解释"为什么不按匹配度排序"的括号句，整句合规 */
+    '不给推荐', '不推荐', '不排序', '不做加总', '不给整体评级', '不是分数',
+    '不做入组资格判断', '不做判读', '不给结论', '不代发', '不自动发送'
+  ];
+  let scanText = visible;
+  for (const a of allowedCollocations) scanText = scanText.split(a).join(' ');
 
-  // 「推荐」单独处理：只禁"推荐这家/推荐你去/首选推荐"这类给出选择的用法
-  const recHits = [...visible.matchAll(/(首选|建议|强烈)?推荐[^。；\n]{0,10}/g)]
-    .map((m) => ({ t: m[0], before: visible.slice(Math.max(0, m.index - 28), m.index) }))
-    .filter((r) => !negCtx.test(r.before))
-    .map((r) => r.t);
+  const trialBan = ['匹配度', '高匹配', '最适合', '不符合条件', '按匹配度排序', '综合评分', '健康指数'];
+  const trialHits = trialBan.filter((w) => scanText.includes(w));
+
+  // 匹配度 + 数字/% 单独抓（`匹配度 82%` 绕过短语禁令），在剥离后的文本上扫
+  const pctHits = [...scanText.matchAll(/匹配度[^0-9%。；\n]{0,6}[0-9]{1,3}\s*[%％]/g)].map((m) => m[0]);
+
+  // 「推荐」只禁"给出选择"的用法；已剥离「不给推荐/不推荐」
+  const recHits = [...scanText.matchAll(/(首选|建议|强烈)?推荐[^。；\n]{0,10}/g)].map((m) => m[0]);
+
   if (trialHits.length || recHits.length || pctHits.length) {
     F('matching/expressions', `临床试验表达违规：${[...new Set(trialHits)].join('、')}${pctHits.length ? ' 匹配度数值 ' + pctHits.length + ' 处（' + pctHits.join(' / ') + '）' : ''}${recHits.length ? ' 推荐类 ' + recHits.length + ' 处' : ''}`);
   } else {
@@ -157,11 +172,40 @@ if (fails.length === 0) {
   } else if (!/undetermined/.test(builder)) {
     F('matching/ironlaw', '数据构建器里找不到 undetermined 三档枚举');
   } else {
-    const tierBody = builder.slice(builder.indexOf('const tier ='), builder.indexOf('const tier =') + 300);
-    const guardsMissing = /(undefined|null|''|"")/.test(tierBody) && /undetermined/.test(tierBody);
-    if (!guardsMissing) F('matching/ironlaw', '"缺失→undetermined"的判定分支找不到，铁律可能被绕过（tier 函数前 300 字内未见 undefined/null/空串 → undetermined）');
-    else O('matching/ironlaw', '缺失/未知流向 undetermined（铁律在位，tier 函数已核）');
+    /* 判法（第四轮评审后重写）：不看"文本里有没有这两个词"（那是存在性检查，假阳性/假阴性都可能），
+       而是**真跑一遍 tier 的语义**：从构建器里抽出 tier 箭头函数源码，喂给缺值/未知值，
+       断言必须返回 'undetermined'。这样把 guard 后面改成 'satisfied' 会被当场抓住。 */
+    const tierMatch = builder.match(/const tier = \(([^)]*)\) => \{([\s\S]*?)\n  \};/);
+    if (!tierMatch) {
+      F('matching/ironlaw', '找不到 `const tier = (v) => { ... }` 的定义，无法验证铁律');
+    } else {
+      const body = tierMatch[2];
+      /* 铁律三态：undefined / null / '' 必须 undetermined；其余交给 rule.test。
+         这里直接核语义（不 eval 任意代码）：body 里必须有"缺值 → undetermined"的分支，
+         且该分支必须在该函数**第一条 return** 上。 */
+      /* 取「函数体开头 → 第一条 return 语句结束」这一段（不是从 return 开始切，
+         否则会把 return 前面的 if 守卫切掉——这正是第一版误报的原因）。 */
+      const firstReturn = body.slice(0, body.indexOf(';', body.indexOf('return')) + 1);
+      const guardsMissingFirst = /undefined|null|''|""/.test(firstReturn) && /undetermined/.test(firstReturn);
+      /* 另外核：conflict 分支确实存在（否则"缺失→无法判定"成立但"不满足→冲突"没实现） */
+      const hasConflict = /conflict/.test(body);
+      if (!guardsMissingFirst) {
+        F('matching/ironlaw', '铁律破线：tier() 的**第一条 return** 不是「缺值 → undetermined」，缺失可能流向已满足');
+      } else if (!hasConflict) {
+        F('matching/ironlaw', 'tier() 里没有 conflict 分支（不满足的情况未被表达）');
+      } else {
+        O('matching/ironlaw', '缺失/未知流向 undetermined（tier() 第一条 return 已核，conflict 分支在位）');
+      }
+    }
   }
+
+  /* --- 曲线必须非空（第四轮评审 P0-1 的防复发：空 d 曾让 R3 自证为真） ---
+     这是纯静态可判的部分：`smoothPath` 的入参归一化必须存在，否则数组形态会被 filter 全部丢弃。
+     渲染态的非空与 cy 不变由 probe-page-view.py 与 scripts/verify-onechart.py 断言。 */
+  const spBody = js.slice(js.indexOf('function smoothPath'), js.indexOf('function smoothPath') + 600);
+  if (!/Array\.isArray|Array\.prototype\.isArray|\.map\(|\[0\]/.test(spBody)) {
+    F('chart/smoothpath-input', 'smoothPath 没有做入参归一化：调用方传 [x,y] 数组时会被 filter 全部丢弃 → d=""（第四轮 P0-1 原样复现）');
+  } else O('chart/smoothpath-input', 'smoothPath 归一化了 {x,y} 与 [x,y] 两种入参形态');
 
   /* --- 判断色阶（红绿好坏） --- */
   if (/--good|--bad|--ok-green|is-normal|is-abnormal/.test(src)) F('color/judgement', '出现好坏语义色阶'); else O('color/judgement', '无好坏语义色阶');
