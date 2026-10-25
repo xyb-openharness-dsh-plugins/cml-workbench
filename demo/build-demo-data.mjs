@@ -16,7 +16,7 @@
    - INSERT 一律写显式列名；events/docs/candidates 为定长数组。
 */
 import { DatabaseSync } from 'node:sqlite';
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync, unlinkSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -409,7 +409,12 @@ function toSqlite(db, p, tag) {
 
 function main() {
   const data = buildDemoProfiles();
-  const db = new DatabaseSync(':memory:');
+  /* 2026-10-25：本函数头注释一直声称产出 demo/demo-data.sqlite（"可 SQL 查询"），
+     但实现只写了 demo-data.js 与 demo-summary.json —— 声明与实现矛盾，且用户点名要"自带 sqlitedb"。
+     现改为真正落盘：先删旧文件（避免重复运行时 INSERT 叠行），再建文件库。 */
+  const SQLITE = join(ROOT, 'demo/demo-data.sqlite');
+  try { unlinkSync(SQLITE); } catch { /* 首次运行没有旧文件 */ }
+  const db = new DatabaseSync(SQLITE);
   toSqlite(db, A, 'A');
   toSqlite(db, B, 'B');
   const counts = {
@@ -453,10 +458,41 @@ function main() {
     { id: 'DEMO-CML-QOL-01', title: '【演示虚构】长期服用 TKI 患者的生活质量随访', phase: '观察性', status: '招募中（演示）', sponsor: '（演示）某患者组织合作项目', note: '不涉及用药调整。', lastCheck: '2026-10-25', channel: 'demo' }
   ];
 
+  /* ---------- 入组档案 / 三档判定 / 试验目录 落库 ---------- */
+  db.exec(`CREATE TABLE IF NOT EXISTS demo_enrollment (tag TEXT, grp TEXT, field TEXT, value TEXT, present INTEGER)`);
+  const insEnroll = db.prepare(`INSERT INTO demo_enrollment (tag,grp,field,value,present) VALUES (?,?,?,?,?)`);
+  /* enroll[tag] 是扁平数组：[{k, g, v, present}]，不是分组结构 */
+  ['A', 'B'].forEach((tag) => {
+    for (const f of enroll[tag]) insEnroll.run(tag, f.g, f.k, String(f.v == null ? '' : f.v), f.present ? 1 : 0);
+  });
+
+  db.exec(`CREATE TABLE IF NOT EXISTS demo_match_judgment (tag TEXT, rule_id TEXT, rule_text TEXT, field TEXT, tier TEXT, mine TEXT, src TEXT)`);
+  const insJudge = db.prepare(`INSERT INTO demo_match_judgment (tag,rule_id,rule_text,field,tier,mine,src) VALUES (?,?,?,?,?,?,?)`);
+  ['A', 'B'].forEach((tag) => {
+    for (const j of assess[tag].judgments) insJudge.run(tag, j.id, j.text, j.field, j.tier, j.mine, j.src);
+  });
+
+  db.exec(`CREATE TABLE IF NOT EXISTS demo_trial (id TEXT, title TEXT, phase TEXT, status TEXT, sponsor TEXT, note TEXT, last_check TEXT, channel TEXT)`);
+  const insTrial = db.prepare(`INSERT INTO demo_trial (id,title,phase,status,sponsor,note,last_check,channel) VALUES (?,?,?,?,?,?,?,?)`);
+  for (const t of trials) insTrial.run(t.id, t.title, t.phase, t.status, t.sponsor, t.note, t.lastCheck, t.channel);
+
+  /* 落库自检：三张新表行数必须与内存数据一致，否则数据层与库不同源 */
+  const enrollRows = db.prepare('SELECT COUNT(*) c FROM demo_enrollment').get().c;
+  const enrollExpect = enroll.A.length + enroll.B.length;
+  if (enrollRows !== enrollExpect) throw new Error(`demo_enrollment 行数 ${enrollRows} ≠ 源数据 ${enrollExpect}`);
+  const judgeRows = db.prepare('SELECT COUNT(*) c FROM demo_match_judgment').get().c;
+  const judgeExpect = assess.A.judgments.length + assess.B.judgments.length;
+  if (judgeRows !== judgeExpect) throw new Error(`demo_match_judgment 行数 ${judgeRows} ≠ 源数据 ${judgeExpect}`);
+  const trialRows = db.prepare('SELECT COUNT(*) c FROM demo_trial').get().c;
+  if (trialRows !== trials.length) throw new Error(`demo_trial 行数 ${trialRows} ≠ 源数据 ${trials.length}`);
+  db.close();
+
   const js = `/* 由 demo/build-demo-data.mjs 生成；勿手改，改数据请改生成器后重新运行。 */\nwindow.DEMO_DATA = ${JSON.stringify({ profiles: { A, B }, metrics: { A: metricsOf(A, 'A').metrics, B: metricsOf(B, 'B').metrics }, enrollment: enroll, match: assess, trials: trials, categoryOrder: CATEGORY_ORDER })};\n`;
   writeFileSync(join(P2, 'demo-data.js'), js);
   writeFileSync(join(ROOT, 'demo/demo-summary.json'), JSON.stringify({ counts, profiles: ['A', 'B'], generated_by: 'demo/build-demo-data.mjs' }, null, 2));
-  console.log(JSON.stringify({ ok: true, counts, js_bytes: js.length }, null, 2));
+  console.log(JSON.stringify({ ok: true, counts, js_bytes: js.length,
+    sqlite_bytes: statSync(SQLITE).size,
+    sqlite_tables: ['demo_profile', 'demo_mol', 'demo_rx', 'demo_ae', 'demo_cost', 'demo_enrollment', 'demo_match_judgment', 'demo_trial'] }, null, 2));
 }
 
 if (process.argv[1] && process.argv[1].endsWith('build-demo-data.mjs')) main();
