@@ -50,6 +50,9 @@
       B: { pcr: [], ae: [], cost: [], rx: [] }
     },
     accepted: { A: {}, B: {} },   /* P0-5：docs 候选「接受/更正」的真实状态 */
+    /* P0-R1：生育页问题清单按档案分桶。切档案不是"清空"而是"各看各的"——
+       清空会丢本人刚写的东西，共用一份又会把 B 的问题显示给 A。 */
+    fertQByProfile: { A: [], B: [] },
     writes: []                    /* 最近写入回执（可观察） */
   };
   function ex() { return state.extra[state.profile]; }
@@ -682,6 +685,12 @@
       });
     });
     questions.push({ id: 'q1', section: 'questions', visibility: 'shared', recorder: rec, text: '下次复查的时间和项目是什么？' });
+    /* P1-2：S9 产物（生育页问题清单）必须进复诊包，否则"加了却带不走"。
+       只取本档案的（fertQByProfile 按档案分桶），避免 B 的问题出现在 A 的资料包里。 */
+    (state.fertQByProfile[state.profile] || []).forEach(function (t, i) {
+      questions.push({ id: 'fq-' + i, section: 'questions', visibility: 'shared', recorder: rec, text: t,
+        source: '生育页问题清单（本人/家属填写）' });
+    });
     questions.push({
       id: 'q2', section: 'questions', visibility: 'shared', recorder: rec,
       text: '长期服药对身体的其它影响、能不能减量，我要怎么问才说清楚？',
@@ -1552,7 +1561,7 @@
       '<div class="row" style="margin-top:8px"><label class="field-label" for="fertQ">新增要问的</label>' +
       '<input id="fertQ" type="text" placeholder="只写要问什么，不写答案" value="' + esc((draft().fertQ || '')) + '">' +
       '<button type="button" class="btn" data-act="fert-qadd">加入清单</button></div>' +
-      '<ul id="fertQNew">' + (state.fertQ || []).map(function (t, i) {
+      '<ul id="fertQNew">' + (state.fertQByProfile[state.profile] || []).map(function (t, i) {
         return '<li>' + esc(t) + recBadge(recorderDefault()) +
           '<button type="button" class="btn btn-sm" data-act="fert-qdel" data-i="' + i + '">删掉这条</button></li>';
       }).join('') + '</ul>' +
@@ -1875,6 +1884,10 @@
       state.tfrState = {};
       state.gloss = '';
       state.prepOut = null;
+      /* P0-R1：切档案必须清掉产物层，否则 A 屏幕会显示 B 生成的清单（上轮 P0-11 同类回归）。
+         prepOut 原本就有，但本轮新增的 tfrOut / fertQ / fertQMsg 漏了。 */
+      state.tfrOut = null;
+      state.fertQMsg = '';
       state.docsFail = false;
       state.lastDraft = null;
       var ap = $('aiPrompt'); if (ap) ap.value = '';
@@ -1926,7 +1939,26 @@
     if (act === 'mol-lab') { state.molTab = 'lab'; goto('mol', 'lab'); return; }
     if (act === 'gloss') { state.gloss = (state.gloss === v) ? '' : v; render(); return; }
     if (act === 'mol-save') { saveMol(); return; }
-    if (act === 'mol-correct') { var c = $('aiHint'); if (c) c.textContent = '更正模式：打开同一条记录的历史版本链（本机内存态）。'; return; }
+    if (act === 'mol-correct') {
+      /* P1-1：原实现只改 #aiHint 一句文案，页面数据零变化——就是"点了没反应"。
+         更正必须落地成版本链条目并可见：取最近一条本机新增记录，写一条更正版本。 */
+      var pts0 = (ex().pcr || []);
+      if (!pts0.length) {
+        noteWrite('mol', '更正不可用：本机还没有新增记录，先保存一条再改（原记录一律不覆盖）。');
+        render(); return;
+      }
+      var last = pts0[pts0.length - 1];
+      ex().pcrVersions = ex().pcrVersions || [];
+      ex().pcrVersions.push({
+        d: last.d, from: last.v, to: last.v, at: TODAY, recorder: recorderDefault(),
+        src: '本机更正（' + MEM_NOTICE + '）· 原行保留不覆盖'
+      });
+      state.molState = 'correcting';
+      noteWrite('mol', '已建立更正版本链：' + last.d + ' 这条现在有 ' +
+        (ex().pcrVersions.filter(function (v0) { return v0.d === last.d; }).length) +
+        ' 个版本（原值不覆盖；改完值点保存会写新版本）。' + MEM_NOTICE + '。');
+      render(); return;
+    }
     if (act === 'mol-reject') {
       state.molState = 'rejected';
       draft().mol = readMolForm();                 /* 拒收零副作用：只留草稿，不写任何记录 */
@@ -1970,18 +2002,23 @@
                    '导出时间：' + TODAY + ' · 只含报告字段照抄位与医生原话，本清单不给结论', ''];
       lines.push('【必备 5 条】');
       (tf.must || []).forEach(function (r, i) {
-        lines.push((i + 1) + '. ' + (r[0] || '') + '｜照抄位：' + (r[1] || '未抄录') + '｜状态：' + (r[2] || '待补'));
+        lines.push((i + 1) + '. ' + (r[0] || '') + '｜报告原文值：' + (r[1] || '未抄录') + '｜核对三态：' + tfrMapState(r[1]));
       });
       lines.push('', '【最低 5 条】');
       (tf.min || []).forEach(function (r, i) {
-        lines.push((i + 1) + '. ' + (r[0] || '') + '｜照抄位：' + (r[1] || '未抄录') + '｜状态：' + (r[2] || '待补'));
+        lines.push((i + 1) + '. ' + (r[0] || '') + '｜报告原文值：' + (r[1] || '未抄录') + '｜核对三态：' + tfrMapState(r[1]));
       });
+      /* 门诊原话与页面同源：都取 rx 里 outcome==='none' 的那条医生原话（此前读
+         profile().tfr.quotes，demo 数据无该键 → 导出恒 0 条，而页面明明显示 1 条）。 */
+      var tfrQuotes = (profile().rx || []).filter(function (r) { return /医生原话/.test(String(r[5] || '')); });
       lines.push('', '【门诊原话（带来源）】');
-      ((profile().tfr && profile().tfr.quotes) || []).forEach(function (qq2) {
-        lines.push('· ' + qq2[0] + '（来源：' + qq2[1] + '）');
+      if (!tfrQuotes.length) lines.push('· 本档案门诊记录中无相关原话引用；待门诊补录。');
+      tfrQuotes.forEach(function (r) {
+        lines.push('· ' + String(r[5] || '').replace(/^医生原话：「|」$/g, '') +
+                   '（来源：' + (r[6] || '未记录') + (r[7] ? ' · 文件 ' + r[7] : '') + '）');
       });
       state.tfrOut = lines.join('\n');
-      state.lastWrite = { page: 'tfr', profile: state.profile, text: '已生成核对清单：' + (tf.must || []).length + ' 条必备 + ' + (tf.min || []).length + ' 条最低 + ' + (((profile().tfr || {}).quotes) || []).length + ' 条门诊原话' };
+      state.lastWrite = { page: 'tfr', profile: state.profile, text: '已生成核对清单：' + (tf.must || []).length + ' 条必备 + ' + (tf.min || []).length + ' 条最低 + ' + tfrQuotes.length + ' 条门诊原话' };
       render(); return;
     }
     if (act === 'tfr-print') { try { window.print(); } catch (e3) { /* ignore */ } return; }
@@ -1989,16 +2026,16 @@
       var inp = $('fertQ');
       var v = inp ? String(inp.value || '').trim() : '';
       if (!v) { state.fertQMsg = '写一句「要问什么」再点加入（不写答案）。'; render(); return; }
-      state.fertQ = (state.fertQ || []).concat([v]);
+      state.fertQByProfile[state.profile] = (state.fertQByProfile[state.profile] || []).concat([v]);
       draft().fertQ = '';
       state.fertQMsg = '已加入清单：' + v + '（记录者：' + recorderDefault() + '）';
-      state.lastWrite = { page: 'fert', profile: state.profile, text: '已加入问题清单（' + state.fertQ.length + ' 条）' };
+      state.lastWrite = { page: 'fert', profile: state.profile, text: '已加入问题清单（' + state.fertQByProfile[state.profile].length + ' 条）' };
       render(); return;
     }
     if (act === 'fert-qdel') {
       var ii = Number(el.getAttribute('data-i'));
-      state.fertQ = (state.fertQ || []).filter(function (_, k) { return k !== ii; });
-      state.fertQMsg = '已删掉一条（剩 ' + state.fertQ.length + ' 条）';
+      state.fertQByProfile[state.profile] = (state.fertQByProfile[state.profile] || []).filter(function (_, k) { return k !== ii; });
+      state.fertQMsg = '已删掉一条（剩 ' + (state.fertQByProfile[state.profile] || []).length + ' 条）';
       render(); return;
     }
     if (act === 'prep-export') { state.prepOut = exportBundle(); render(); return; }
@@ -2007,8 +2044,29 @@
     if (act === 'docs-fail') { state.docsFail = !state.docsFail; render(); return; }
     if (act === 'docs-accept' || act === 'docs-correct') {
       var id = el.getAttribute('data-id');
-      state.accepted[state.profile][id] = (act === 'docs-accept' ? '已接受' : '已更正');
-      noteWrite('docs', (act === 'docs-accept' ? '已接受候选 ' : '已更正候选 ') + id + '（状态已变化，本机内存态）。');
+      var p0 = profile();
+      var cand = (p0.candidates || []).filter(function (c) { return c[0] === id; })[0];
+      if (act === 'docs-accept') {
+        state.accepted[state.profile][id] = '已接受';
+        noteWrite('docs', '已接受候选 ' + id + '（状态列与计数立刻变，本机内存态）。');
+      } else {
+        /* P1-1：原实现只改一个状态字符串，页面上「已接受」那行一字不变——点了没反应。
+           更正必须是可见的版本链产物：写一条更正记录（原值 → 新值 + 时间 + 记录者），保留原行不覆盖。 */
+        var nv = prompt('更正后的值（原值：' + (cand ? cand[2] : '') + '）', cand ? cand[2] : '');
+        if (nv == null || String(nv).trim() === '') {
+          noteWrite('docs', '更正已取消：没有填写新值，原记录未改动。');
+          render(); return;
+        }
+        state.accepted[state.profile][id] = '已更正';
+        ex().docVersions = ex().docVersions || [];
+        ex().docVersions.push({
+          id: id, from: cand ? cand[2] : '', to: String(nv).trim(),
+          at: TODAY, recorder: recorderDefault(),
+          src: '本机更正（' + MEM_NOTICE + '）· 原行保留不覆盖'
+        });
+        noteWrite('docs', '已更正候选 ' + id + '：' + (cand ? cand[2] : '') + ' → ' + String(nv).trim() +
+          '（版本链 +1，原行保留，本机内存态）。');
+      }
       render(); return;
     }
   }

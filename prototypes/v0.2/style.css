@@ -241,7 +241,17 @@ svg.chart .legend{fill:var(--muted)}
   .app{display:block!important;overflow:visible!important;height:auto!important;min-height:0!important}
   .main-col{display:block!important;overflow:visible!important;height:auto!important;min-height:0!important}
   #view{display:block!important;overflow:visible!important;height:auto!important}
-  .sidebar,.topbar,.session,.splitter,.skip,.footer,.mem-notice,.agent-log{display:none!important}
+  /* 注意：不能整类隐藏 .agent-log —— 页内产物块（#tfrOut / #prepOut）也用这个类，
+     隐藏它会让"打印这一页"印不出导出内容（产物 ≠ 屏幕产物）。
+     侧栏里的 .agent-log 随 .session 一起被隐藏，无需单独处理。 */
+  .sidebar,.topbar,.session,.splitter,.skip,.footer,.mem-notice{display:none!important}
+  /* 页内产物块在打印时必须完整展开：.agent-log 平时有 max-height:220px + overflow:auto，
+     打印会把它裁成首屏 220px——实测「门诊原话」整块印不出来。 */
+  .main-col .agent-log{
+    display:block!important;white-space:pre-wrap;word-break:break-word;
+    max-height:none!important;overflow:visible!important;
+    border:1px solid #bbb;background:transparent
+  }
   .phase-detail{display:grid!important}
   summary::after,.ph-hint{display:none}
   .phase-fold{break-inside:avoid}
