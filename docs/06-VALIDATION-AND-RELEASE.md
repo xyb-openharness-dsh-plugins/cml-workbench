@@ -190,3 +190,46 @@ npm→GitHub Release→源码的来源选择由市场合同决定，锁定版本
 ## 工作台市场投稿操作指南
 
 明确要进入 DSH Desktop 工作台市场时，按 [市场发布流程](10-MARKET-PUBLISHING.md) 执行：官方依据、来源选择、人工验收单、YAML、gh命令、最新PR检查与上架判断集中在该文档。指定版本的手工确认直接复用；Computer Use仅按需补充。代码推送、包发布与市场收录分别记录。
+
+## M5/M6 实地记录：CML 工作台首装（2026-10-25）
+
+### 做了什么
+
+1. `public/` 从 `prototypes/v0.2/` 复制四件套 + 新增 `public/bridge.js`（宿主桥，只在 iframe 内生效）。
+2. `dsh/{index.js,routes.js,server.js}`：路由表抽出来共用，静态层只认 `public/` 根并拦路径穿越。
+3. `lib/{client.js,layout.js,version.js}`：customFrame 外壳（语义 header、原生会话常挂、splitter 可拖可键盘、窄屏抽屉）。
+4. `npm pack` → `xyb-community-cml-workbench-0.1.0.tgz`（26 文件 / 233,797 B / sha256 `5b4d09a6…`）。
+5. 装进 **Desktop 实际读的 profile**：`~/Library/Application Support/dsh-desktop/harness/profiles/web`，
+   用 app 自带 pnpm 10.34.5：`pnpm add -w ./xyb-community-cml-workbench-0.1.0.tgz`，
+   再登记 `dsh.profile.bundles`（两处都改，缺一不可）。
+6. `node scripts/check-install.mjs` → ✓ 已登记到 Desktop 实际加载的 profile。
+
+### 实测结果（都是真跑的）
+
+| 项 | 结果 |
+| --- | --- |
+| 路由表（本地起服务） | health 200 / ui 302→200 / app.js 200 / style.css 200 / demo-data.js 200 / bridge.js 200；`../../package.json` **404**（穿越被拦）；未知 api **404 JSON** |
+| 真实宿主 API（app 自带 harness + 真实 profile） | `health` **200** `{"ok":true,"version":"0.1.0",...}`；`/ui/` **200** 16,646 字符 |
+| 真实宿主里渲染 | 11 页全部有 h1；`#dash` 看板 / `#mol` 分子线 / `#onechart` 病情一图秀 / `#trial` 临床试验；**0 pageerror、0 失败请求** |
+| 包内容 | 26 文件，`public/` 五件、`dsh/` 三件、`lib/` 三件都在（`pack-contents.test.mjs` 4/4 绿） |
+| `npm run check` | 5 个 pass / 0 fail |
+| `npm test` | 4 pass / 0 fail |
+
+### 踩到的坑（都记下来，下一个病种别再踩）
+
+1. **`--profile` 位置**：`dsh --profile web web` 报 `unknown option '--profile'`，`dsh web --profile web` 报
+   `option '--profile' argument 'web' is invalid. select a profile only once`。**正确做法**：cd 进 profile 目录后直接 `dsh web`，
+   它会用 cwd 的 profile；不要给 `web` 子命令传 `--profile`。
+2. **同一 `DSH_HOME` 起过 `dsh web` 会让 Desktop GUI 起不来**：我先用 app CLI 起了 harness 做验证，
+   之后 `open -a "DSH Desktop.app"` 进程秒退（exit 0）。`pkill -f "bin.js web"` 之后再启动就正常。
+   **装机验收要在 Desktop 启动之前关掉所有 CLI 起的 harness。**
+3. **并行会话会改同一个 profile**：本轮期间另一个会话正在往同一 profile 装 `@snoozepal-dsh/narcolepsy-workbench`，
+   中途出现过一次 `failed to prepare profile bundle @snoozepal-dsh/narcolepsy-workbench`（原因：登记了但依赖还没装完）。
+   这不是本项目缺陷，但**验证自己的包之前要先确认 profile 里没有别的包处于半装状态**。
+4. **`dsh web` 启动会打印 endpoint 与 token**：token 走 URL 查参、落地成 cookie；用 Playwright 时
+   先 `goto(/?token=…)` 拿到 cookie，再访问 `/api/<slug>/ui/`，否则一律 401。**cookie 名是带后缀的**（`dsh-auth-<rand>`）。
+5. **`check-host-contract.mjs` 读注释当代码**：`/* 形态 customFrame=true：… */` 被正则当成字面量，报
+   `customFrame 不是 true/false 字面量：true）。`。已给检查器加 `stripComments()`；同时让它接受
+   `repository: CONST`（常量在同一文件里是 GitHub URL 字面量）。
+6. **`check-workbench-package.mjs` 只认字面量 repository**：`repository: REPO` 报
+   `Canonical repository required in descriptor`。描述符里必须写**字面量 URL**，不能走常量。

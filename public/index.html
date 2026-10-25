@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>小粒宝 GranPal · CML 患者工作台 v0.1.0（M2 原型）</title>
+<link rel="stylesheet" href="style.css">
+<!-- 宿主桥：只在装进 Desktop（iframe 内）时生效，本地直接打开原型不介入 -->
+<script src="bridge.js" defer></script>
+</head>
+<body>
+
+<a class="skip" href="#view">跳到主要内容</a>
+
+<!-- 顶栏：版本字面量 v0.1.0 常显；资料目录指示器；设置；AI 对话状态 -->
+<header class="topbar">
+  <div class="brand">小粒宝 GranPal <span class="ver">v0.1.0</span></div>
+
+  <nav class="profiles" aria-label="演示档案切换（示例档案 A / B 是两位不同患者；双主体＝每条记录可由本人或家属代记，标注见「记录者」）">
+    <button type="button" class="chip" data-act="profile" data-p="A">档案 A · 患者本人视角</button>
+    <button type="button" class="chip" data-act="profile" data-p="B">档案 B · 家属代记视角</button>
+    <span class="muted subj-note">示例档案 A（周建国·男 46·e14a2）与 B（林雨桐·女 31·e13a2）是<strong>两位不同患者</strong>的不同病程形态；「双主体」指同一档案内记录可由本人或家属代记，每条带「记录者」；切档案清空未提交草稿。</span>
+  </nav>
+
+  <div class="topbar-right">
+    <span class="dir-indicator" id="dirIndicator" title="患者资料目录（本机）">资料目录：~/GranPal/病历资料 · 已挂载</span>
+    <button type="button" class="btn" data-act="settings" aria-haspopup="dialog">设置</button>
+    <button type="button" class="btn" data-act="panel-toggle" id="panelToggle" aria-controls="session" aria-expanded="true">收起会话区</button>
+    <span class="conn" id="connState">AI 对话：未连接</span>
+  </div>
+</header>
+
+<div class="app" id="app">
+
+  <!-- 一级页导航（10 条）-->
+  <nav class="sidebar" aria-label="一级页面">
+    <ul id="navList">
+      <li><a href="#dash" data-route="dash">看板</a></li>
+      <li><a href="#mol" data-route="mol">分子线</a></li>
+      <li><a href="#med" data-route="med">服药线</a></li>
+      <li><a href="#ae" data-route="ae">副作用日志</a></li>
+      <li><a href="#tfr" data-route="tfr">TFR 档案</a></li>
+      <li><a href="#cost" data-route="cost">费用记录</a></li>
+      <li><a href="#fert" data-route="fert">生育计划</a></li>
+      <li><a href="#prep" data-route="prep">复诊准备</a></li>
+      <li><a href="#docs" data-route="docs">资料导入</a></li>
+      <li><a href="#trial" data-route="trial">临床试验</a></li>
+    </ul>
+    <p class="nav-note">设置＝顶栏弹窗，不计一级页。</p>
+  </nav>
+
+  <div class="main-col">
+    <main id="view" tabindex="-1" aria-live="polite"></main>
+  </div>
+
+  <!-- 会话区：默认 35%，范围 25%–45%，可拖拽/键盘调宽，可收起/重开，宽度写入 localStorage -->
+  <div class="splitter" id="splitter" role="separator" aria-orientation="vertical" tabindex="0"
+       aria-label="会话区宽度调节（25%–45%，←/→ 步进 1%，Home/End 到边界）"></div>
+
+  <aside class="session" id="session" aria-label="AI 会话区">
+    <div class="session-head">
+      <strong>AI 会话（原生会话区）</strong>
+      <span class="muted" id="sessionState">状态：未连接 · 隐藏面板不结束会话、不清空草稿</span>
+    </div>
+
+    <div class="session-body">
+      <p class="muted">一键带上下文：页面按钮发 <code>cml:agent-draft</code>，携带当前页 / 档案 / 时间区间 / 相关记录摘要；提示词只进下面输入框，<strong>不自动发送</strong>。</p>
+
+      <!-- 可见输入框：AI 协助按钮只填入，不发送 -->
+      <label class="field-label" for="aiPrompt">提示词（待你确认后手动发送）</label>
+      <textarea id="aiPrompt" rows="6" placeholder="点任意页面的「AI 协助（示例）」按钮后，示例提示词会填到这里；本原型不会自动发送。"></textarea>
+
+      <div class="row">
+        <button type="button" class="btn" data-act="ai-send">发送</button>
+        <button type="button" class="btn" data-act="ai-clear">清空</button>
+        <span class="muted" id="aiHint">原型不发起真实请求。</span>
+      </div>
+
+      <h3 class="h3">最近一次 cml:agent-draft</h3>
+      <pre class="agent-log" id="agentLog">（尚未触发）</pre>
+
+      <h3 class="h3">隐私三出口</h3>
+      <p class="muted">导出 / AI 上下文 / 摘要三个出口统一经过 <code>filterPrivate(list, exit)</code>；
+        <code>visibility=&quot;private&quot;</code> 的条目（生育计划、副作用私密条目）默认不进导出与 AI。</p>
+      <pre class="agent-log" id="exitLog">（切到生育计划页可看到三出口计数）</pre>
+    </div>
+  </aside>
+</div>
+
+<!-- 页脚贴底：flex column + margin-top:auto；版本字面量 v0.1.0 + 构建日 + 数据目录状态 -->
+<footer class="footer">
+  <span>小粒宝 GranPal <b class="ver">v0.1.0</b></span>
+  <span>构建日：2026-10-25</span>
+  <span>数据目录：~/GranPal/病历资料 · 状态：已挂载（本机）</span>
+  <span>示例数据：prototypes/v0.2/demo-data.js（只读）</span>
+  <span class="mem-notice" id="memNoticeFooter">原型为内存态，刷新回到演示数据</span>
+</footer>
+
+<!-- 设置弹窗 CML-CFG：资料目录 / 凭据状态 / 临床数据包 / 关于与版本 -->
+<div class="modal-mask" id="settingsModal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="cfgTitle">
+    <div class="modal-head">
+      <h2 class="h2" id="cfgTitle">设置 CML-CFG</h2>
+      <button type="button" class="btn" data-act="cfg-close">关闭</button>
+    </div>
+    <div class="modal-body">
+
+      <section class="cfg-sec">
+        <h3 class="h3">① 患者资料目录</h3>
+        <table class="kv">
+          <tbody>
+            <tr><th>当前路径</th><td data-th="当前路径">~/GranPal/病历资料</td></tr>
+            <tr><th>状态</th><td data-th="状态">已挂载（本机）· 只读示例数据</td></tr>
+            <tr><th>迁移边界</th><td data-th="迁移边界">仅本机目录；不做云端同步；换机需手动迁移并保留备份</td></tr>
+          </tbody>
+        </table>
+        <div class="row">
+          <button type="button" class="btn" data-act="cfg-path-save">保存路径</button>
+          <button type="button" class="btn" data-act="cfg-path-cancel">取消</button>
+          <span class="muted" id="cfgPathMsg">取消不写库；保存失败保留输入并可重试。</span>
+        </div>
+      </section>
+
+      <section class="cfg-sec">
+        <h3 class="h3">② API 凭据</h3>
+        <table class="kv">
+          <tbody>
+            <tr><th>模型 API</th><td data-th="模型 API">已配置（Token 文件）</td></tr>
+            <tr><th>MinerU 解析</th><td data-th="MinerU 解析">未配置</td></tr>
+            <tr><th>凭据存储</th><td data-th="凭据存储">Token 文件优先；<code>.secrets</code> 已被 <code>.gitignore</code> 覆盖</td></tr>
+          </tbody>
+        </table>
+        <p class="muted">本弹窗只显示「已配置 / 未配置」，<strong>不显示明文</strong>。</p>
+      </section>
+
+      <section class="cfg-sec">
+        <h3 class="h3">③ 临床参考数据包</h3>
+        <table class="kv">
+          <tbody>
+            <tr><th>中国 CML 诊疗指南</th><td data-th="中国 CML 诊疗指南">2025 版 · 已入库 · 版本号 GL-CN-2025</td></tr>
+            <tr><th>ICC 分期口径</th><td data-th="ICC 分期口径">ICC2022 · 已入库</td></tr>
+            <tr><th>信号清单（HVT-11）</th><td data-th="信号清单（HVT-11）">来源已入库 · <b>内容未核验</b>（U 级待核）</td></tr>
+            <tr><th>临床试验数据</th><td data-th="临床试验数据">未接入（M4 后填实际值）</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="cfg-sec">
+        <h3 class="h3">④ 关于与版本</h3>
+        <table class="kv">
+          <tbody>
+            <tr><th>版本</th><td data-th="版本">v0.1.0</td></tr>
+            <tr><th>构建日</th><td data-th="构建日">2026-10-25</td></tr>
+            <tr><th>渠道</th><td data-th="渠道">M2 交互原型（本地 HTML，未装机）</td></tr>
+            <tr><th>来源</th><td data-th="来源">docs/UI-DESIGN.md · docs/32-TREATMENT-PATHWAY-FOLDOUT.md · docs/SCENARIOS.md · docs/HVT-REVIEW.md</td></tr>
+            <tr><th>免责声明</th><td data-th="免责声明">本原型为界面演示，不构成诊疗意见；数值与原文均照抄示例数据，本页不做判读。</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<script src="demo-data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
+
+<!--
+==================== M2 原型自查清单（GranPal CML · v0.1.0 · 构建日 2026-10-25）====================
+检查方式：① Node 载入 demo-data.js + app.js，对 A/B 两档案 × 10 个一级页逐一 renderPage 并正则计数；
+② 本机 Google Chrome headless（dump-dom 模式）在 1280 / 900 / 700 三档宽度真机渲染，跑 43 + 19 条 DOM 断言；
+③ grep 源码。下面数字全部来自上述实跑输出，不是估计值。
+说明：本清单为避开词表自检污染，把两个判读词写成「异·常」「建·议」（中间的点是分隔符）；界面渲染文本里它们只出现在引号内。
+
+1) 一级页数量 = 10
+   dash 看板 / mol 分子线 / med 服药线（二级：今日打卡 checkin、依从日历 calendar、处方变更 rx）/
+   ae 副作用日志 / tfr TFR 档案 / cost 费用记录 / fert 生育计划 / prep 复诊准备 / docs 资料导入 / trial 临床试验。
+   另有顶栏「设置」弹窗（资料目录 / 凭据状态 / 临床数据包 / 关于与版本），按 UI-DESIGN 不计一级。
+   hash 路由：#dash #mol #med #med/checkin #med/calendar #med/rx #ae #tfr #cost #fert #prep #docs #trial；刷新保持当前页（DOM 断言 PASS）。
+
+2) 每个页面的 AI 按钮有无（DOM 实测，A 与 B 相同；按钮均为 data-act="ai"）
+   dash = 2（看板本页 1 + 复诊倒计时卡内「复诊准备」1）
+   mol  = 1
+   med  = 1，但只在「处方变更（rx）」二级节；默认 tab＝今日打卡，所以默认视图上 med 的 AI 按钮计数 = 0
+          （需求允许：med 打卡页除外，理由已写在该节内：打卡是每日事实写入，无文本需归纳，且模型产出的「补服/停药」措辞会越界成处置方向）
+   ae   = 1
+   tfr  = 0（红线：重大决策不 AI 生成，页面已写「本页不提供 AI 生成」）
+   cost = 1
+   fert = 0（红线：同上，页面已写「本页不提供 AI 生成」）
+   prep = 1
+   docs = 1
+   trial= 1
+   点击行为（DOM 断言 PASS）：dispatchEvent(new CustomEvent('cml:agent-draft', {detail:{prompt, context}}))；
+   context 含 page / profile / range / records / filter；提示词写入可见 textarea#aiPrompt，不自动发送。
+
+3) [open] 默认数 = 0
+   A+B × 全 10 页共 20 次渲染，每次 document.querySelectorAll('details.phase-fold[open]').length 均为 0。
+   折叠卡总数 = 7（A 档案 4 张：确诊与一线起始 / 减量观察 / 换药与胸腔积液处理 / 维持与随访；
+   B 档案 3 张：确诊与一线起始 / 二线尼洛替尼 / TFR 停药尝试与密测）。全部使用原生 details + summary，零 JS 展开。
+
+4) 五块折叠卡内容
+   每张展开区 section.pd-block = 5，顺序固定：方案 → 指标和趋势 → 影像发现 → 副作用总结 → 心理与营养措施和效果
+   （合计 A 4×5=20，B 3×5=15，共 35 块，全部 PASS）。无内容写「无 + 说明」，无省略块。
+   summary 格式：● 阶段名 · 日期 · 一句话概要 · 展开细节，箭头由 ::after 的 ▸/▾ 输出（无 emoji）。
+   展开区 grid repeat(2,minmax(0,1fr))，≤900px 单列。
+   打印：@media print 在 style.css「打印」段（grep 关键字 `@media print`）。**2026-10-25 修订**：原规则只在打印媒体下展开 .phase-detail，
+   但应用外壳（html/body/.app/.main-col 的 height:100% + overflow:hidden）让打印流只出首屏，实测 PDF **1 页**。
+   现规则先解除外壳高度/溢出约束并隐藏侧栏/顶栏/会话区，实测 Chrome 出 PDF：**A 档案 9 页 / B 档案 8 页**（此前 1 页）。
+
+5) 图表 SVG 数量**不在此处写死**（写死必然过期：曾写 6，加入一图秀后实际 8）。
+   以渲染态探针为准：`python3 scripts/probe-page-view.py` 逐页数 `svg.chart`（A+B × 11 路由）。
+   当前位置的实测：每档案 dash / mol / onechart / cost 各 1 个，A+B 合计 8；trial 页无图表属预期。
+   全部由 app.js 手写生成，根元素均带 class="chart"（DOM 断言：svg:not(.chart) = 0）。
+   折线走自实现 Fritsch–Carlson 单调三次插值 smoothPath(points)（app.js 内 `function smoothPath`，含单调性修正，不依赖任何库）；
+   X 轴按日期、Y 轴按报告值（线性为默认，另给对数刻度切换）；趋势线单色（accent 语义色单一取值），无红绿好坏色阶，参考线灰虚线。
+   分类值（kind==='qual'/'grade'，如 ae）不画进曲线，只按事件列出。
+   BCR::ABL1 图可比性分段：相邻两点 lab 不同或 is_std≠1 → 断开折线并在断点标注「不可比（实验室/标化不同）」；
+   图上图例给出四要素 unit / lab / is_std / sens（缺项显示「未记录」）。演示开关：mol 页「可比性演示」按钮（只改视图层，不改数据）。
+   参考线 3/6/12 月为灰虚线，图上与图下都标「医生给的里程碑时间点，不是判读线」。
+
+6) filterPrivate（app.js，用 grep 定位，不写死行号——行号会随修订漂移）
+   `function filterPrivate(list, exit)`：出口白名单 export / ai / summary，未知出口抛错。
+   三出口调用点：`filterPrivate(recs, 'ai')`（buildAiContext）、`filterPrivate(recs, 'export')`（exportBundle / fetchExport）、`filterPrivate(recs, 'summary')`（buildSummary）。
+   界面与导出用同一函数展示保留/过滤计数（副作用页、生育页、复诊准备页三处）。
+   规则落地：fert 条目默认 visibility='private'；副作用私密条目默认 visibility='private'（A/B 各 1 条示例，页面带「私密」标记）。
+   fert / ae / prep 三页均明写「私密内容不进导出与 AI」。
+
+7) 禁词自检结果（A+B × 11 页渲染后、展开全部折叠卡，逐词计数；2026-10-25 用脚本复算）
+   （判读族）满足 0 ｜ 未满足 0 ｜ 达标 0 ｜ 未达标 0 ｜ 已达成 0 ｜ 未达 0 ｜ 可以停药 0 ｜ 建议停药 0 ｜ 无需就医 0 ｜ 治愈率 0 ｜ 正常 0 ｜ 风险 0 ｜ 在线 0（A、B 两档均 0）
+   （词表口径）`MR4.0` 是**报告字段名**不是判读词，但本原型不整段出现它——实测 4 处，全在导出块与「报告原文值」列里照抄报告原文；
+     独立出现的「MR4.0」在正文 0 处（2026-10-25 复核：导出文本已改为「报告原文值 / 核对三态」两列，MR4.0 只随报告原文出现）。
+   `建议` 4 处 / `复发` 1 处全部在带来源的 `<q class="quote">` 内（医生原话或报告原文照抄），合规。
+   `异常` 2 处：1 处 A/mol/lab 列头「报告字段（照抄）」是报告原文列名照抄，1 处 B/mol 在带来源 `<q>` 内，合规。
+   判读族核心词（满足/未满足/达标/未达标/已达成/未达/可以停药/建议停药/无需就医/治愈率）实测 **A、B 两档全 0**。
+   带来源的 q.quote 引用不当禁词——所有医生原话/报告原文都在 `<q class="quote">` 内且紧跟 `<span class="src">来源：…</span>`；
+   引用态断言：`q.quote` 无 `.src` 的条数 = 0。
+   demo-data.js 已重新生成（2026-10-25：清掉数据源里 A 档案 tfr.min 的判读词「未满足」「未达 MR4.0」，改为三态「未抄录」+ 只抄时长/报告值），
+     demo-data.js 的当前指纹**不在此处写死**（写死必然过期——第三轮写 1d38e5e2/16574B，此后数据层改过两次，实物已是 d4fbc2b1/34046B）。
+     以 `shasum -a 256 prototypes/v0.2/demo-data.js` 与 `scripts/check-demo-data.mjs` 的输出为准，本文件不复制数字；B 档案患者原话为敏感词，界面不渲染、只在带来源 `<q>` 内按原文出现。
+
+8) 其他硬规则实跑结果
+   版本字面量 v0.1.0：顶栏与页脚都在；页脚含构建日 2026-10-25 与数据目录状态「~/GranPal/病历资料 · 已挂载（本机）」。
+   页脚贴底：短页面（#trial）footer.bottom = 视口高（flex column + margin-top:auto + 面板内部滚动）。
+   字号：style.css 只用 12.5px / 13px / 15px；浏览器遍历全部元素 computed font-size，越界 0 个。
+   会话区：默认 35%，范围 25%–45%，拖拽/键盘 ←→ 步进 1%/Home/End 到边界，写入 localStorage['granpal.panelWidth']；可收起/重开（原生 hidden）。
+   hidden：全站用原生 hidden + `[hidden]{display:none!important}`（style.css 顶部的 reset 段）。
+   窄宽：≤900px 单列；≤720px **所有表格**转键值行（thead 隐藏 + td::before 取 data-th）、图表在 .chart-wrap 内横向滚动；
+     **1440/1024/800/420 四档 × 11 页 × 展开态，横向溢出全部 = 0**（2026-10-25 修订：此前 420px 下分子线明细表溢出 32px；
+     加入 onechart 后复跑 11×4=44 例仍全 0，`@390` 下 `body.scrollWidth === innerWidth === 390`，横滚只发生在 `.chart-wrap` 内）。
+   状态：mol 有空态/单点/错误态；打卡有空态/单点/写失败重试；docs 有解析失败转手工补录；TFR 三态可切换。
+   副作用词表按当前用药：A（当前=达沙替尼）→ dasatinib + withdrawal；B（当前=停药）→ 只 withdrawal；页面显示被过滤条目数。
+   TFR 页：必备 5 条 + 最低 5 条 + 最佳项单列 + 密测轨道三行，逐条「报告原文值 + 核对三态」；
+     **页面正文 0 处停药方向性文案**；唯一出现"停药"字样的句子是医生原话照抄（B 档案「…达到书面条件，可以谈停药…」），
+     包在 `<q class="quote">` 内并紧跟来源（血液科门诊 2026-04-09 · 文件 B-D5）——引用态不计为方向性文案，页面文字不改写不加评。
+     **导出件（`tfr-export`）会带走这句原话**，因此导出件自带尾注：来源 + 「本清单不给结论」+ 「停药条件必须由医生判断」。
+     （2026-10-25 第四轮评审 P1-11：此前导出件没有尾注，而自检写「全页 0 处」——自述范围写错了，已改为「页面正文」并把尾注补进产物。）
+   HVT-11 信号卡（看板）：4 条静态事实，逐条带来源与版本 GL-CN-2025，状态全部标「未核验」，页脚不做个体判断。
+   档案切换：**A 与 B 是两位不同患者**（A 周建国·男 46·e14a2；B 林雨桐·女 31·e13a2），不是同一人的两个视角——
+     「双主体」指**同一档案内**一条记录可由本人或家属代记，每条带「记录者」标记；切档案清空未提交草稿（实测 A 填「草稿药A」→ 切 B 后值 = 空）。
+     2026-10-25 修订：此前界面文案写「同一患者的两个记录视角」而数据是两位患者，属声明与实现矛盾，已按事实改文案。
+
+10) 2026-10-25 增补的三项家族既有能力（本轮按规范实装，规范见脚手架 24/16/27 号与 MATCHING-SPEC）
+   a. 指标卡（分子线 tab「指标卡（分系列·翻面）」）：7 张卡，按 4 个类别分组，类别标题＝「类别名 + 项数 + 有记录项数」；
+      类别顺序与颜色取唯一 `CATEGORY_ORDER`（demo 侧），与一图秀共用同一份，页面不做第二处分组。
+      卡片结构 `button.mcard > span.mcard-inner > span.mface.front + span.mface.back`；外卡固定高 **276px**、圆角 18、内边距 20、间距 16；
+      数字 33px（字号检查器按选择器 `.mval` 单点豁免，已记入 DEV-REQUIREMENTS §七），项目名 15px，正文 12.5px；
+      过渡 **480ms `cubic-bezier(.2,.7,.2,1)`**，`prefers-reduced-motion` 下直接切终态；
+      实测：翻转前后 rect 完全相同（位移 0.0）、内层 `matrix3d(-1,0,0,0,…)`、单卡 `aria-pressed=true` 其余 false、
+      再点回正面、**点击只改 class/aria，不重新 render**（翻面动画不被重绘打断）。
+      无记录写「还没有记录」不写 0；单点写「暂无可比较的前次记录」。
+      1440/1080/860 三档列数 **2/2/1**、卡高恒 276、无横向溢出。
+   b. 一图秀（新增一级页 `#onechart`）：指标选择窗口按类别分组、独立滚动容器（`max-height:300px` + 遮罩），
+      最多同时 4 条（第 5 次点击被拒并提示「最多同时看 4 条线：先去一条再选新的。」）；
+      `<details class="pick">` **默认收起**可展开（原型纪律：默认展开 details 必须为 0）；
+      每条线**以「全期首点」为基线**归一化（基线不随窗口变，所以同一采样日在不同窗口下 cy 相同；图例逐条写明「全期首点口径，不随窗口变」），
+      单点不连线，**窗口内无数据给空态**（先按窗口过滤再判空——曾错判为"全部记录为空"，见第四轮 P1-1）；
+      **治疗条占独立 22px 行，不参与曲线坐标系——关掉治疗条后曲线 `d` 与每个点的 `cy` 都逐条不变（实测 True，且这次 d 非空）**；
+      分类指标（`kind=qual`，如副作用记录）**不进数值轴**，单列文字说明（27 号 §1）；
+      只标末点、靠右改 `text-anchor=end`、多序列奇偶错开；`svg role="img"` + `aria-label` + 每点 `<title>`（数量随所选指标变化，当前默认 2 条线为 16 个）；
+      **筛选变化只重绘 `#chart-panel`**（实测面板节点同一性保持，翻面/焦点/滚动不丢）；
+      **（第四轮评审 P0-1 修订记录）** 此前曲线一条都画不出来：`smoothPath` 只认 `{x,y}` 对象，而一图秀与指标卡背面传的是 `[x,y]` 数组，
+      全被 filter 丢弃 → `d=""`；而当时的 R3 断言比较的是空字符串，于是"不变"永远为真——**这是一次被空值骗过的自证**。
+      现 `smoothPath` 在入口归一化两种形态，并把该断言改为同时比 `d` 与 `cy`，且先断言 `d` 非空。
+      R1 不可比说明图上可见：A 档案因外院那条 `is_std=0` 记录真实出现「不可比提示」。
+      **B 档案不显示该提示，这是符合规范的**——B 的 pcr 单实验室单单位、客观无不可比断点；
+      （2026-10-25 第四轮评审 P1-10：此前写「B 档案同样命中」为假，已改正。不为让自述成立而伪造提示。）
+   i. **（2026-10-25 自查新增，两处真缺陷）**
+      **①「同一份数据两个最新值」**：`metrics()` 原先不加本机写入，而 `metricByKey()` 加——
+      于是写入一条复查记录后，趋势图 6 点、可比性表 6 行，但**指标卡与一图秀选择器仍显示旧的最近值 0.086**。
+      已把合并点收敛到 `metrics()` 一处（`baseMetrics()` 只读演示数据），所有读取方同源；实测写入后卡片显示 `0.045 · 已记录 6 次`。
+      **②指标卡 tab 从 lab 出发到不了**：`parseHash()` 只认 `lab`、其余一律 `trend`，`cards` 不在 hash 里，
+      于是 lab → cards 会被 hashchange 打回 trend。已让三个 tab 都进 hash（`#mol/cards`），实测 lab → cards 可达、7 张卡渲染。
+      （这两条都是"自查时顺手发现的"，不属于第四轮评审列出的 11 条 P1——记在此以便下一轮核对。）
+   c. 临床试验（重做）：入组档案 **18 字段 / 7 组**全部来自既有病情数据，卡头显示「完整度 x/y · 全部来自既有病情数据」并列出缺失字段；
+      规则 11 条（confirmed 10 + pending 1），三档求值**确定性、不调模型**，铁律「缺失永远流向无法判定」；
+      汇总行只计数不给匹配度；待确认规则单列；页脚「排序按数据来源顺序，不按匹配度 · 评估生成 <时间>（档案 <rev> · 规则集 <ver>）」；
+      渠道覆盖如实显示「覆盖 1/1 个渠道（演示渠道 · 就绪）· 未参与：ICTRP / ChiCTR 在线 / chinadrugtrials / 小胰宝归档」；
+      **不做 CML 的 IHC 标志物筛选**（IHC 是实体瘤分型工具，不是 CML 的入排工具）——改用细胞遗传学（Ph 染色体）与 BCR::ABL1 转录本/激酶区突变；
+      实测 A 完整度 **14/18**（满足 7 · 冲突 0 · 无法判定 3 · 待确认 1），B **13/18**（满足 5 · 冲突 1 · 无法判定 4 · 待确认 1）；
+      全页无「匹配度百分比 / 高匹配 / 推荐 / 按匹配度排序」，无红绿排名。
+      4 条试验记录全部标【演示虚构】，M4 接 unified-trial-mcp 后整体替换。
+
+9) 未验证 / 已知取舍（如实）
+   a. 「大字（浏览器 125%/150%）不出现横向滚动条、按钮触控高度 ≥44px」：只用 CSS 与四档宽度验证，未在真实浏览器缩放 125%/150% 下实测。
+   b. 打印：已用 Chrome 出 PDF 并**做了文本层校验**（2026-10-25 更正：此前写"Type3 无 ToUnicode、中文抽不出"是错的，
+      pypdf 抽取 + NFKC 归一化 + 去空白后中文可检索）。折叠区五块标题、只在展开区出现的句子、以及本页页内产物块
+      （`#tfrOut` 的「门诊原话」整块）都已在 PDF 文本层命中。**按路由实测**：`#mol` A 9 页 922,333B / B 8 页 902,261B；
+      `#dash` 3 页、`#trial` 4 页、`#onechart` 1 页。注意第三轮记的"A 9 页"是 `#mol` 的页数，**不是 `#dash`** —— 只看默认路由会误判退化。
+      **仍未验证**：实体打印机分页与断卡位置、大字缩放下分页。
+   c. 会话区拖拽在触屏上只做了代码路径（touchstart/move/end），未在触屏设备实测。
+   d. 本原型不连接任何后端：打卡、更正、候选接受、导出都是前端内存态，刷新即回到 demo 数据；未做真实写库与失败恢复。
+   e. 影像发现块按「不代拟结论」处理：A 档案 2026-09-02 胸部 CT 只写文件与「结论原文待逐字核对入库」；B 档案影像块为「无 + 说明」。
+   f. MinerU 六部件、临床试验数据、API 凭据都只是界面态，未接真实服务：
+      当前 4 条试验是**演示虚构**记录（页面逐条标注【演示虚构】），渠道只有 `demo` 一个，M4 接 unified-trial-mcp 后整体替换。
+   g. 指标卡的 `inert` 与 3D 翻面在 Safari/Firefox 未实测（只在 Chrome 上验证）；触屏点按翻面同理。
+   h. 一图秀只做了时间窗与治疗条开关，未做缩放（zoom）、关键点、变化标注三个可选图层；`pin`（点选固定）未实现。
+
+===============================================================================================
+-->

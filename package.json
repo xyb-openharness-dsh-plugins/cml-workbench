@@ -14,7 +14,13 @@
   "files": [
     "dsh",
     "lib",
-    "assets",
+    "public",
+    "assets/brand",
+    "assets/icons",
+    "assets/tokens.css",
+    "assets/tokens.json",
+    "assets/manifest.json",
+    "assets/patterns",
     "cordis.patch.yml",
     "README.md",
     "NOTICE.md"

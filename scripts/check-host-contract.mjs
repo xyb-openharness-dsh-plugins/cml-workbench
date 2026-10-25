@@ -23,9 +23,16 @@
 import { existsSync, readFileSync } from 'node:fs'
 
 const read = (p) => (existsSync(p) ? readFileSync(p, 'utf8') : '')
+
+/** 剥掉注释再匹配：注释里写「customFrame=true 的原因…」是文档，不是配置。
+    2026-10-25 实测踩到：不改这一行会把说明文字当成字面量，报
+    `customFrame 不是 true/false 字面量：true）。` —— 检查器读注释当代码。 */
+const stripComments = (src) => src
+  .replace(/\/\*[\s\S]*?\*\//g, ' ')
+  .replace(/(^|[^:])\/\/[^\n]*/g, '$1')
 const client = read('lib/client.js')
 const layout = read('lib/layout.js')
-const both = `${client}\n${layout}`
+const both = `${stripComments(client)}\n${stripComments(layout)}`
 const problems = []
 const notes = []
 
@@ -58,7 +65,14 @@ for (const key of ['title', 'panelTitle']) {
 }
 
 // 3) repository 必须是 GitHub URL（宿主 repositoryIdentity 的正则）
-const repo = client.match(/["']?repository["']?\s*:\s*["'`]([^"'`]+)["'`]/)?.[1]
+/* 允许两种写法：直接字面量 `repository: 'https://…'`，或 `repository: CONST` 且 CONST 在同一文件里
+   定义为 GitHub URL 字面量。只认字面量会把"用常量避免重复"的正常写法误报成没写 repository。 */
+const repoDirect = client.match(/["']?repository["']?\s*:\s*["'`]([^"'`]+)["'`]/)?.[1]
+const repoConstName = client.match(/["']?repository["']?\s*:\s*([A-Za-z_$][\w$]*)\s*[,}]/)?.[1]
+const repoViaConst = repoConstName
+  ? client.match(new RegExp(`(?:const|let|var)\\s+${repoConstName}\\s*=\\s*["'\`](https:[^"'\`]+)["'\`]`))?.[1]
+  : undefined
+const repo = repoDirect || repoViaConst
 if (!repo) notes.push('没写 repository（宿主允许省略，但市场识别与更新会退化）')
 else if (!/^https:\/\/github\.com\/[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+?(?:\.git)?\/?$/i.test(repo)) {
   problems.push(`repository 不是合法 GitHub URL：${repo}（宿主：Workbench repository must be a GitHub URL）`)
