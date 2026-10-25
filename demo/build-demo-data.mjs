@@ -34,7 +34,7 @@ const A = {
   path: ['e14a2', '慢性期', '伊马替尼 400mg', '达沙替尼 50mg'],
   activity: '每天早饭后吃药；每周三次快走 40 分钟，胸腔积液那阵改成散步',
   familyTalk: '和爱人说好：每次复查报告拍一张发家庭群，她负责提醒我吃药',
-  /* 分子线：6 个月 6 次 qPCR；8 月起换实验室（不可比 → 分段） */
+  /* 分子线：省血液病医院里程碑复测 + 一次外院（未 IS 标化，不可比 → 分段） */
   molecular: [
     { k: '转录本类型', v: 'e14a2（典型）', src: '血液科 2026-01-22 RT-PCR', state: 'ok', note: '典型转录本，TFR 书面前提之一' },
     { k: '染色体', v: 'Ph+（t9;22）', src: '骨髓细胞遗传学 2026-01-22', state: 'ok', note: '未见额外染色体异常（ACA）' },
@@ -69,11 +69,13 @@ const A = {
     ['2026-08-06', 4.4, 26, 130, 204], ['2026-09-03', 4.8, 30, 134, 216],
     ['2026-10-12', 5.0, 32, 138, 222]
   ],
-  /* qPCR（含可比性四要素） */
+  /* qPCR（含可比性四要素）。外院那次 is_std=0 → 与主线不可比：图上断开、不跨组连线、不换算。
+     这是真实排布里本来就会发生的事（出差就近复查），不是演示开关。 */
   pcr: [
     ['2026-01-22', 42.6, 'IS%', '省血液病医院', 1, 'MR4.5', '确诊基线'],
     ['2026-04-20', 8.4, 'IS%', '省血液病医院', 1, 'MR4.5', '3 个月里程碑'],
     ['2026-07-18', 1.12, 'IS%', '省血液病医院', 1, 'MR4.5', '6 个月里程碑'],
+    ['2026-09-05', 0.21, 'IS%', '外院（华山医院）', 0, '未注明', '外地出差就近复查，外院未做 IS 标化'],
     ['2026-10-12', 0.086, 'IS%', '省血液病医院', 1, 'MR4.5', '12 个月里程碑']
   ],
   /* TFR 条件核对（照抄报告字段，不判定） */
@@ -141,7 +143,14 @@ const A = {
     ['A-C1', 'BCR::ABL1', '0.086', 'BCR-ABL1 定量报告 2026-10-12', '待确认'],
     ['A-C2', '白细胞', '5.0', '血常规 2026-10-12', '待确认'],
     ['A-C3', '体重', '74.2', '门诊记录 2026-10-12', '已接受']
-  ]
+  ],
+  /* 入组档案会用到的既有字段（全部来自已有报告/门诊记录，不重复录入）。
+     故意留两个缺口（ECOG、QTc）来演示"缺失永远流向无法判定"。 */
+  liverFn: 'ALT 23 U/L · 总胆红素 14.2 μmol/L（2026-10-12 生化，均在参考范围内）',
+  renalFn: '肌酐 78 μmol/L · eGFR 96 mL/min（2026-10-12 生化）',
+  lipase: '脂肪酶 42 U/L（参考 ≤60，2026-10-12 生化）',
+  comorbid: ['胸腔积液（2026-09，达沙替尼相关，已停药复查）'],
+  pregnancy: '不适用（男性）'
 };
 
 /* ---------- 档案 B：31 岁女性，e13a2 · 尼洛替尼 → TFR 停药尝试（家属代记主体） ---------- */
@@ -254,8 +263,108 @@ const B = {
     ['B-C1', 'BCR::ABL1', '0.0021', 'BCR-ABL1 定量报告 2026-10-08', '待确认'],
     ['B-C2', '白细胞', '4.8', '血常规 2026-10-08', '待确认'],
     ['B-C3', '体重', '52.4', '门诊记录 2026-10-08', '已接受']
-  ]
+  ],
+  /* 同 A：只用已有报告里的字段。B 档案缺 ECOG / QTc / 脂肪酶 → 演示"无法判定" */
+  liverFn: 'ALT 62 U/L（2025-11-20，高于参考上限）· 总胆红素 11.0 μmol/L（正常）',
+  renalFn: '肌酐 61 μmol/L · eGFR 102 mL/min（2026-10-08 生化）',
+  comorbid: ['肝功能异常（ALT 升高，2025-11 尼洛替尼期间）'],
+  pregnancy: '未孕（2026-10 自述；TKI 已停）'
 };
+
+
+/* ---------- 临床研究：入组档案 + 规则库 + 三档求值（MATCHING-SPEC §2/§3/§4） ----------
+   铁律（改前必读）：
+   1. 缺失永远流向「无法判定」，绝不流向「已满足」。
+   2. 求值是确定性规则求值：同档案 + 同规则版本 = 同结果，不调用模型。
+   3. 不输出匹配度百分比、不排序推荐。唯一的"指数"是**入组档案完整度 x/y**。
+   4. 未确认规则（pending）不进三档，单列一档。
+   5. CML 与实体瘤不同：入组条件看的是**分期 / 转录本类型 / 突变 / 既往 TKI 线数 / 器官功能**，
+      **不做 IHC 标志物筛选**（IHC 是实体瘤的分型工具）。本文件不把 IHC 塞进 CML 目录。
+*/
+
+/* 入组档案字段清单：全部来自既有病情数据（不重复录入）。present=false 表示本档案没有该记录。 */
+function enrollmentProfile(p, tag) {
+  const has = (v) => v !== undefined && v !== null && v !== '' && v !== 'unknown';
+  const mutation = (p.molecular || []).filter((m) => /突变|激酶区|T315I/.test(String(m.k)))[0];
+  const transcript = (p.molecular || []).filter((m) => /转录本/.test(String(m.k)))[0];
+  const dxDate = p.meta ? (String(p.meta).match(/2026-\d\d|2021-\d\d|20\d\d-\d\d/) || [])[0] : null;
+  const fields = [
+    { k: '年龄',        g: '基本',   v: has(p.age) ? p.age + ' 岁' : null },
+    { k: '性别',        g: '基本',   v: has(p.sex) ? p.sex : null },
+    { k: '病种与分期',  g: '基本',   v: has(p.phase) ? p.phase : null },
+    { k: '确诊日期',    g: '基本',   v: dxDate || null },
+    { k: 'BCR::ABL1 转录本类型', g: '基因分子', v: transcript ? String(transcript.v) : null },
+    { k: '激酶区突变',  g: '基因分子', v: mutation ? String(mutation.v) : null },
+    { k: '检测方法与标本', g: '基因分子', v: transcript && transcript.note ? String(transcript.note) : null },
+    { k: '基因检测报告日期', g: '基因分子', v: (p.docs || []).filter((d) => /基因|融合|定量/.test(String(d[3]) + String(d[1]))).map((d) => d[2])[0] || null },
+    { k: '细胞遗传学（Ph 染色体 / 附加异常）', g: '病理', v: (p.molecular || []).filter((m) => /染色体/.test(String(m.k))).map((m) => String(m.v))[0] || null },
+    { k: '既往 TKI 线数', g: '治疗史', v: (() => {
+        const drugs = Array.from(new Set((p.rx || []).map((r) => r[1])
+          .filter((d) => d && d !== '停药' && !/^[（(]/.test(String(d)))));
+        return drugs.length ? drugs.length + ' 线（' + drugs.join(' → ') + '）' : null;
+      })() },
+    { k: '当前用药与剂量', g: '治疗史', v: (() => {
+        const cur = (p.rx || []).filter((r) => !r[4])[0];
+        return cur ? cur[1] + ' ' + cur[2] + ' ' + cur[3] : null;
+      })() },
+    { k: 'ECOG 体能评分', g: '体能', v: p.ecog || null },
+    { k: '肝功能（ALT / 总胆红素）', g: '器官功能', v: p.liverFn || null },
+    { k: '脂肪酶 / 淀粉酶', g: '器官功能', v: p.lipase || null },
+    { k: '肾功能（肌酐 / eGFR）', g: '器官功能', v: p.renalFn || null },
+    { k: '心电图 QTc', g: '器官功能', v: p.qtc || null },
+    { k: '妊娠状态', g: '其他', v: p.pregnancy || null },
+    { k: '主要并发症', g: '其他', v: (p.comorbid || []).length ? p.comorbid.join(' · ') : null }
+  ];
+  return fields.map((f) => Object.assign({ tag }, f, { present: has(f.v) }));
+}
+
+/* 三档求值：确定性。missing → undetermined（铁律），never satisfied。 */
+function evalRule(rule, prof) {
+  const get = (k) => (prof.filter((f) => f.k === k && f.present)[0] || {}).v;
+  const tier = (v) => {
+    if (v === undefined || v === null || v === '') return 'undetermined';
+    return rule.test(v) ? 'satisfied' : 'conflict';
+  };
+  const v = get(rule.field);
+  return { text: rule.text, field: rule.field, tier: tier(v), mine: v == null ? '（本档案无此记录）' : String(v), src: rule.src };
+}
+
+/* 规则库：每条 = 原文 + 结构化条件 + 确认状态。演示条目标 confirmed 的才进三档。 */
+function matchRulesFor(tag) {
+  const R = (id, text, field, test, src, st) => ({ id, text, field, test, src, status: st || 'confirmed' });
+  return [
+    R('r-age',   '年龄 ≥18 岁',                          '年龄', (v) => parseInt(v, 10) >= 18, '入选标准 1'),
+    R('r-phase', '慢性期（或加速期，见原文分项）',        '病种与分期', (v) => /慢性期|加速期/.test(v), '入选标准 2'),
+    R('r-tr',    'Ph 染色体阳性 / BCR::ABL1 阳性',        '细胞遗传学（Ph 染色体 / 附加异常）', (v) => /Ph|阳性|t\(9;22\)/i.test(v), '入选标准 3'),
+    R('r-tx',    '既往 TKI 治疗线数 ≤2',                  '既往 TKI 线数', (v) => parseInt(v, 10) <= 2, '入选标准 4'),
+    R('r-ecog',  'ECOG 0–1',                              'ECOG 体能评分', (v) => /^[01]/.test(String(v)), '入选标准 5'),
+    /* 无临床意义的判定不给模型猜：原文同时出现"高于/超出"就是冲突；出现"参考范围/正常"且无"高于"才算满足 */
+    R('r-liver', 'ALT 与总胆红素在正常上限内',            '肝功能（ALT / 总胆红素）',
+      (v) => !/高于|超出|异常|↑/.test(v) && /参考范围|正常|≤/.test(v), '入选标准 6'),
+    R('r-lip',   '脂肪酶 ≤1.5×ULN',                       '脂肪酶 / 淀粉酶',
+      (v) => !/高于|超出/.test(v) && /≤|正常|参考/.test(v), '入选标准 7'),
+    R('r-qtc',   'QTc <450ms（男）/ <470ms（女）',        '心电图 QTc', (v) => parseFloat(v) < 450, '入选标准 8'),
+    R('r-preg',  '非妊娠期（女性受试者）',                '妊娠状态', (v) => /未孕|非妊娠|不适用/.test(v), '排除标准 3'),
+    R('r-t315i', '排除已知 T315I 突变',                   '激酶区突变', (v) => !/T315I/i.test(v), '排除标准 4'),
+    /* 未确认：结构化不了的原文，保留原文并单列，不进三档 */
+    R('r-other', '试验期间需采取有效避孕措施（原文未结构化）', '妊娠状态', () => true, '排除标准 5', 'pending')
+  ];
+}
+
+
+/* ---------- 指标类别目录（唯一来源） ----------
+   24 号 §：类别标题、顺序、项目归属只在这里定义；指标趋势页与一图秀的选择目录共用同一份，
+   页面里不做第二处排序或分组。颜色只标类别身份，不用红绿表示好坏。 */
+const CATEGORY_ORDER = [
+  { cat: '分子学', label: '分子学反应（BCR::ABL1）', color: '#2f6f66',
+    note: '只看可比序列：换实验室/换单位会拆成不同可比组，不跨组连线、不自行换算。' },
+  { cat: '血象', label: '血象（血常规）', color: '#4a6fa5',
+    note: '同一台机器、同一单位才算同一可比组。' },
+  { cat: '副作用', label: '副作用（按药归属）', color: '#8a5a1f',
+    note: '分级/定性记录不进数值曲线，只在时间线里出现。' },
+  { cat: '费用', label: '费用（月自付）', color: '#6b5b95',
+    note: '按实际支付记录；医保结算滞后时以到账为准并标注。' }
+];
 
 /* ---------- 指标定义（分类值 kind 不进趋势） ---------- */
 function metricsOf(p, key) {
@@ -315,7 +424,36 @@ function main() {
   if (missing !== 0) throw new Error(`qPCR 可比性四要素缺失 ${missing} 行`);
   mkdirSync(join(ROOT, 'demo'), { recursive: true });
   mkdirSync(P2, { recursive: true });
-  const js = `/* 由 demo/build-demo-data.mjs 生成；勿手改，改数据请改生成器后重新运行。 */\nwindow.DEMO_DATA = ${JSON.stringify({ profiles: { A, B }, metrics: { A: metricsOf(A, 'A').metrics, B: metricsOf(B, 'B').metrics }, trials: [] })};\n`;
+  /* 临床研究：入组档案 + 三档求值（确定性，在此算完；原型只读结果，不自己判） */
+  const enroll = { A: enrollmentProfile(A, 'A'), B: enrollmentProfile(B, 'B') };
+  const assess = {};
+  ['A', 'B'].forEach((tag) => {
+    const rules = matchRulesFor(tag);
+    const confirmed = rules.filter((r) => r.status === 'confirmed');
+    const pending = rules.filter((r) => r.status !== 'confirmed');
+    const judged = confirmed.map((r) => Object.assign({ id: r.id, status: r.status }, evalRule(r, enroll[tag])));
+    assess[tag] = {
+      profileRevision: 'demo-v0.2',
+      ruleSetVersion: 'cml-rules-2026.10-1',
+      generatedAt: '2026-10-25',
+      done: judged.filter((j) => j.tier === 'satisfied').length,
+      conflict: judged.filter((j) => j.tier === 'conflict').length,
+      undetermined: judged.filter((j) => j.tier === 'undetermined').length,
+      pending: pending.map((r) => ({ id: r.id, text: r.text, src: r.src })),
+      judgments: judged
+    };
+  });
+
+  /* 试验目录：**演示虚构**，不是真实登记信息，M4 接 unified-trial-mcp 后整体替换。
+     保留渠道状态字段以演示"未就绪 ≠ 没有试验"。 */
+  const trials = [
+    { id: 'DEMO-CML-TFR-01', title: '【演示虚构】TKI 停药后分子学复发监测路径研究', phase: 'II 期', status: '招募中（演示）', sponsor: '（演示）某血液病中心', note: '针对已达到深度分子学反应、拟尝试停药的患者，研究停药后监测频率。', lastCheck: '2026-10-25', channel: 'demo' },
+    { id: 'DEMO-CML-T315I-01', title: '【演示虚构】T315I 突变阳性患者的第三代 TKI 用药研究', phase: 'I/II 期', status: '招募中（演示）', sponsor: '（演示）某三甲医院血液科', note: '入组条件涉及激酶区突变类型。', lastCheck: '2026-10-25', channel: 'demo' },
+    { id: 'DEMO-CML-2L-01', title: '【演示虚构】二线 TKI 换药后的疗效与安全性观察', phase: 'IV 期', status: '尚未招募（演示）', sponsor: '（演示）某省血液病医院', note: '入组条件涉及既往 TKI 治疗线数。', lastCheck: '2026-10-25', channel: 'demo' },
+    { id: 'DEMO-CML-QOL-01', title: '【演示虚构】长期服用 TKI 患者的生活质量随访', phase: '观察性', status: '招募中（演示）', sponsor: '（演示）某患者组织合作项目', note: '不涉及用药调整。', lastCheck: '2026-10-25', channel: 'demo' }
+  ];
+
+  const js = `/* 由 demo/build-demo-data.mjs 生成；勿手改，改数据请改生成器后重新运行。 */\nwindow.DEMO_DATA = ${JSON.stringify({ profiles: { A, B }, metrics: { A: metricsOf(A, 'A').metrics, B: metricsOf(B, 'B').metrics }, enrollment: enroll, match: assess, trials: trials, categoryOrder: CATEGORY_ORDER })};\n`;
   writeFileSync(join(P2, 'demo-data.js'), js);
   writeFileSync(join(ROOT, 'demo/demo-summary.json'), JSON.stringify({ counts, profiles: ['A', 'B'], generated_by: 'demo/build-demo-data.mjs' }, null, 2));
   console.log(JSON.stringify({ ok: true, counts, js_bytes: js.length }, null, 2));

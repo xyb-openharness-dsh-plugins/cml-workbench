@@ -12,9 +12,9 @@
   var DATA = (typeof window !== 'undefined' && window.DEMO_DATA) ? window.DEMO_DATA
     : { profiles: {}, metrics: {}, trials: [] };
 
-  var ROUTES = ['dash', 'mol', 'med', 'ae', 'tfr', 'cost', 'fert', 'prep', 'docs', 'trial'];
+  var ROUTES = ['dash', 'mol', 'onechart', 'med', 'ae', 'tfr', 'cost', 'fert', 'prep', 'docs', 'trial'];
   var ROUTE_LABEL = {
-    dash: '看板', mol: '分子线', med: '服药线', ae: '副作用日志', tfr: 'TFR 档案',
+    dash: '看板', mol: '分子线', onechart: '病情一图秀', med: '服药线', ae: '副作用日志', tfr: 'TFR 档案',
     cost: '费用记录', fert: '生育计划', prep: '复诊准备', docs: '资料导入', trial: '临床试验'
   };
   /* 红线：TFR 与生育两线不提供 AI 生成 */
@@ -24,6 +24,10 @@
   var MEM_NOTICE = '原型为内存态，刷新回到演示数据';
 
   var state = {
+    molFlipped: new Set(),
+    oneSel: ['pcr', 'wbc'],
+    oneRange: 'all',
+    oneToggles: { treatment: true },
     profile: 'A',
     route: 'dash',
     medTab: 'checkin',
@@ -409,7 +413,12 @@
     ],
     trial: [
       '<a class="btn btn-sm" href="#mol">去分子线看趋势</a>',
+      '<a class="btn btn-sm" href="#onechart">去病情一图秀叠看</a>',
       '<a class="btn btn-sm" href="#docs">去资料导入核对原文</a>'
+    ],
+    onechart: [
+      '<a class="btn btn-sm" href="#mol">去分子线看指标卡与词表</a>',
+      '<a class="btn btn-sm" href="#trial">去临床试验核对入组字段</a>'
     ]
   };
 
@@ -732,10 +741,16 @@
   }
 
   /* ================= 通用片段 ================= */
-  function aiButton(page, label) {
+  /* AI 按钮。传 prompt 时走 agent-draft（一键携带预写提示词+病情上下文，只填输入框不自动发送）；
+     不传时走通用 ai 派发。两条路径都不替用户下结论。 */
+  function aiButton(page, label, prompt) {
     if (AI_FORBIDDEN[page]) return '';
-    return '<button type="button" class="btn" data-act="ai" data-page="' + page + '">AI 协助（示例）' +
-      (label ? ' · ' + esc(label) : '') + '</button>';
+    var txt = 'AI 协助（示例）' + (label ? ' · ' + esc(label) : '');
+    if (prompt) {
+      return '<button type="button" class="btn" data-act="agent-draft" data-page="' + page +
+        '" data-prompt="' + esc(prompt) + '">' + txt + '</button>';
+    }
+    return '<button type="button" class="btn" data-act="ai" data-page="' + page + '">' + txt + '</button>';
   }
   function aiForbiddenNote(page) {
     if (!AI_FORBIDDEN[page]) return '';
@@ -860,6 +875,7 @@
 
   /* ================= 页面：dash ================= */
   function pageDash() {
+    /* 一图秀入口（X1：不允许孤儿页——它必须从看板这条真实使用路径上够得着） */
     var p = profile();
     var pcr = metricByKey('pcr') || { points: [] };
     var last3 = pcr.points.slice(-3);
@@ -916,7 +932,8 @@
       h += '<p class="muted">四要素（单位 / 实验室 / IS 标化 / 灵敏度）在分子线页逐点列出；相邻点不可比时断开折线。</p>';
     }
     h += '<div class="row"><button type="button" class="btn" data-act="mol-new">记一笔复查</button>' +
-      '<a class="btn" href="#mol">去分子线</a></div>';
+      '<a class="btn" href="#mol">去分子线</a>' +
+      '<a class="btn" href="#onechart">病情一图秀（叠看几条线）</a></div>';
     h += '<p class="muted">下次复查安排：' + esc(next ? next[0] + ' · ' + next[1] + ' · ' + next[3] : '未记录') + '（医生安排，仅照抄）</p></section>';
 
     /* 副作用速记卡（S3 入口逐字：「记一次不舒服」） */
@@ -1010,13 +1027,14 @@
   }
 
   function pageMol() {
-    var tabs = [['trend', '趋势与词表'], ['lab', '复查记录 CML-LAB（二级）']];
+    var tabs = [['trend', '趋势与词表'], ['cards', '指标卡（分系列·翻面）'], ['lab', '复查记录 CML-LAB（二级）']];
     var h = '<div class="page-head"><h1>分子线</h1>' + badge('档案 ' + state.profile + ' · ' + authorView()) +
       badge('图谱 CML-MOL') + badge('记录者随条目标注') + '</div>';
     h += '<div class="tabs" role="tablist">' + tabs.map(function (tb) {
       return '<button type="button" class="tab" role="tab" aria-selected="' + (state.molTab === tb[0]) + '" data-act="mol-tab" data-v="' + tb[0] + '">' + esc(tb[1]) + '</button>';
     }).join('') + '</div>';
     if (state.molTab === 'lab') return h + molLabBody();
+    if (state.molTab === 'cards') return h + molCardsBody();
     return h + molTrendBody();
   }
 
@@ -1689,30 +1707,474 @@
   }
 
   /* ================= 页面：trial ================= */
-  function pageTrial() {
-    var ts = trials();
-    var h = '<div class="page-head"><h1>临床试验</h1>' + badge('档案 ' + state.profile) + badge('M4 数据未接入') + badge('零匹配结论') + '</div>';
-    h += '<section class="card">';
-    if (!ts.length) {
-      h += '<p class="empty">还没有可显示的临床试验记录：本仓 M4 数据尚未接入（当前 trials 为空数组）。</p>' +
-        '<p class="muted">接入后本页将显示：试验编号 / 题目 / 期别 / 入排条件原文 / 负责中心 / 来源版本 / 核对状态。</p>';
+  /* ================= 指标卡：分类 + 分系列 + 3D 翻面（24 号 / 16 号 §2） =================
+     合同（改前必读）：
+     - 外卡固定高 276px；翻转前后 getBoundingClientRect 完全一致（靠固定高 + 绝对定位双面）。
+     - 真 3D：外层 perspective:1100px，内层 preserve-3d，点整卡 rotateY(180deg)。
+     - 每卡独立：state.molFlipped 是 Set(code)，不存 DOM、不重渲染。
+     - 结构必须 button > span.inner > (span.front + span.back)：内容若是 button 的兄弟节点就结构上不可能翻转。
+     - 隐藏面 aria-hidden + inert，键盘 Tab 不会停到看不见的一面。
+     - 无记录写"还没有记录"（不显示 0——0 是有效值）；单点写"暂无可比较的前次记录"。 */
+  function catOrder() { return DATA.categoryOrder || []; }
+  function catMeta(cat) {
+    var g = catOrder().filter(function (c) { return c.cat === cat; })[0];
+    return g || { cat: cat, label: cat, color: '#2f6f66', note: '' };
+  }
+  /* 同组前次：只认同指标 / 同单位 / 同实验室 / 同标准化状态的上一条 */
+  function prevComparable(m, pt) {
+    var same = (m.points || []).filter(function (q) {
+      return q.d < pt.d && q.lab === pt.lab && q.is_std === pt.is_std && (q.unit || m.unit) === (pt.unit || m.unit);
+    });
+    return same.length ? same[same.length - 1] : null;
+  }
+  function fmtVal(m, v) { return num(v, m.dec == null ? 2 : m.dec); }
+
+  function metricCardFront(m) {
+    var pts = (m.points || []).slice().sort(function (a, b) { return t(a.d) - t(b.d); });
+    var last = pts[pts.length - 1];
+    var h = '<span class="eyebrow" style="color:' + esc(catMeta(m.cat).color) + '">' +
+      '<span class="dot" style="background:' + esc(catMeta(m.cat).color) + '"></span>' + esc(m.cat) + '</span>';
+    h += '<span class="mname">' + esc(m.name) + '</span>';
+    if (!pts.length) {
+      h += '<span class="mval mnone">还没有记录</span>' +
+        '<span class="mmeta">还没有可用于比对的记录</span>';
+    } else if (m.kind === 'qual' || m.kind === 'grade') {
+      h += '<span class="mval mqual">' + esc(String(last.v == null ? '—' : last.v)) + '</span>' +
+        '<span class="mmeta">分类记录，不进数值曲线</span>';
     } else {
-      h += dataTable(['试验编号', '题目', '期别', '入排条件原文', '中心', '来源版本'], ts.map(function (x) {
-        return [esc(x.id || ''), esc(x.title || ''), esc(x.phase || ''), esc(x.eligibility || ''), esc(x.site || ''), esc(x.version || '')];
-      }));
+      h += '<span class="mval">' + fmtVal(m, last.v) + '<span class="munit">' + esc(m.unit || '') + '</span></span>';
+      var prev = prevComparable(m, last);
+      if (!prev) {
+        h += '<span class="mmeta">暂无可比较的前次记录</span>';
+      } else {
+        var d = last.v - prev.v;
+        var arrow = d > 0 ? '↑' : (d < 0 ? '↓' : '→');
+        h += '<span class="mmeta">较前次 ' + arrow + ' ' + fmtVal(m, Math.abs(d)) + ' ' + esc(m.unit || '') +
+          '（' + esc(prev.d) + ' 同实验室同标准化）</span>';
+      }
+      h += '<span class="mmeta">已记录 ' + pts.length + ' 次 · 最近采样 ' + esc(last.d) +
+        (last.lab ? ' · ' + esc(last.lab) : '') + '</span>';
     }
-    h += '<p class="note">本页只列记录与原文，不做「你是否符合」的匹配结论。</p></section>';
-    h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>本页 AI 协助</h3></div>' +
-      '<div class="row">' + aiButton('trial', '列核对字段清单') + '</div></section>';
+    h += '<span class="mhint">点卡片翻面看历次记录</span>';
+    return h;
+  }
+
+  function metricCardBack(m) {
+    var pts = (m.points || []).slice().sort(function (a, b) { return t(a.d) - t(b.d); });
+    var h = '<span class="mname">' + esc(m.name) + '<span class="munit"> ' + esc(m.unit || '') + '</span></span>';
+    if (pts.length < 2) {
+      h += '<span class="mmeta">' + (pts.length ? '暂无可比较的前次记录（只有 1 次记录，不连线）' : '还没有记录') + '</span>';
+      if (pts.length) h += '<span class="mmeta">' + esc(pts[0].d) + ' · ' + fmtVal(m, pts[0].v) + ' ' + esc(m.unit || '') + '</span>';
+    } else {
+      h += '<span class="mini" role="img" aria-label="' + esc(m.name) + '历次记录">' + miniSVG(m, pts) + '</span>';
+      h += '<span class="mmeta">' + esc(pts[0].d) + ' 至 ' + esc(pts[pts.length - 1].d) +
+        ' · 共 ' + pts.length + ' 次 · 末次 ' + fmtVal(m, pts[pts.length - 1].v) + ' ' + esc(m.unit || '') + '</span>';
+    }
+    var labs = [];
+    pts.forEach(function (q) { if (q.lab && labs.indexOf(q.lab) < 0) labs.push(q.lab); });
+    var stds = pts.map(function (q) { return q.is_std === 1 ? '标准化' : '未标准化'; })
+      .filter(function (v2, i, a) { return a.indexOf(v2) === i; });
+    h += '<span class="mmeta">' + esc(labs.join(' · ') || '机构待补') + ' · ' + esc(stds.join(' / ')) +
+      (m.note ? ' · ' + esc(m.note) : '') + '</span>';
+    return h;
+  }
+
+  /* 背面迷你折线：横轴按真实采样日期比例（不按点序号等距），单点不连线 */
+  function miniSVG(m, pts) {
+    var W = 240, H = 74, padL = 6, padR = 6, padT = 8, padB = 14;
+    var xs = pts.map(function (q) { return t(q.d); });
+    var x0 = Math.min.apply(null, xs), x1 = Math.max.apply(null, xs);
+    var vs = pts.map(function (q) { return Number(q.v); });
+    var v0 = Math.min.apply(null, vs), v1 = Math.max.apply(null, vs);
+    var sx = function (v) { return padL + (x1 === x0 ? (W - padL - padR) / 2 : (v - x0) / (x1 - x0) * (W - padL - padR)); };
+    var sy = function (v) { return H - padB - (v1 === v0 ? (H - padT - padB) / 2 : (v - v0) / (v1 - v0) * (H - padT - padB)); };
+    /* segmentsOf 返回 [{pts:[...], gap:[a,b]|null}]；gap 处断开＝不可比，不跨组连线 */
+    var segs = segmentsOf(pts);
+    var paths = segs.map(function (seg) {
+      if (!seg.pts || seg.pts.length < 2) return '';
+      var xy = seg.pts.map(function (q) { return [sx(t(q.d)), sy(Number(q.v))]; });
+      return '<path d="' + smoothPath(xy) + '" fill="none" stroke="' +
+        catMeta(m.cat).color + '" stroke-width="1.6"></path>';
+    }).join('');
+    var dots = pts.map(function (q, i) {
+      return '<circle cx="' + sx(xs[i]).toFixed(1) + '" cy="' + sy(Number(q.v)).toFixed(1) + '" r="2.4" fill="' +
+        catMeta(m.cat).color + '"><title>' + esc(q.d) + ' · ' + fmtVal(m, q.v) + ' ' + esc(m.unit || '') + '</title></circle>';
+    }).join('');
+    return '<svg class="mini-chart" viewBox="0 0 ' + W + ' ' + H + '" width="100%" height="' + H +
+      '" role="img" aria-label="' + esc(m.name) + '历次记录小图">' + paths + dots + '</svg>';
+  }
+
+  /* 一张卡：button 外壳（可聚焦可翻）> inner > front + back。
+     注意不要在里面再嵌 button（24 号 §5），背面来源信息用 span。 */
+  function metricCard(m) {
+    var flipped = state.molFlipped.has(m.key);
+    return '<button type="button" class="mcard' + (flipped ? ' flipped' : '') + '" data-act="mcard" data-key="' +
+      esc(m.key) + '" aria-pressed="' + (flipped ? 'true' : 'false') + '" role="group" tabindex="0"' +
+      ' aria-label="' + esc(m.name) + '，点一次翻面看历次记录，再点返回">' +
+      '<span class="mcard-inner">' +
+      '<span class="mface front"' + (flipped ? ' aria-hidden="true" inert' : '') + '>' + metricCardFront(m) + '</span>' +
+      '<span class="mface back"' + (flipped ? '' : ' aria-hidden="true" inert') + '>' + metricCardBack(m) + '</span>' +
+      '</span></button>';
+  }
+
+  /* 分组区块：标题＝类别名 + 指标项数 + 有记录项数（24 号） */
+  function metricCardsBody() {
+    var ms = metrics();
+    if (!ms.length) return '<p class="empty">还没有指标定义。</p>';
+    var order = catOrder().map(function (c) { return c.cat; });
+    var groups = {};
+    ms.forEach(function (m) { (groups[m.cat] = groups[m.cat] || []).push(m); });
+    /* 顺序只取目录；目录里没有的类别排到最后（"其他已记录指标"），不在这里另排 */
+    var cats = order.filter(function (c) { return groups[c]; });
+    Object.keys(groups).forEach(function (c) { if (cats.indexOf(c) < 0) cats.push(c); });
+
+    var h = '';
+    cats.forEach(function (c) {
+      var items = groups[c];
+      var withRec = items.filter(function (m) { return (m.points || []).length; }).length;
+      var meta = catMeta(c);
+      h += '<section class="cat-block"><h3 class="cat-head" style="border-left-color:' + esc(meta.color) + '">' +
+        esc(meta.label) + '<span class="cat-count">' + items.length + ' 项 · 有记录 ' + withRec + ' 项</span></h3>' +
+        (meta.note ? '<p class="muted">' + esc(meta.note) + '</p>' : '') +
+        '<div class="mcard-grid">' + items.map(metricCard).join('') + '</div></section>';
+    });
+    return h;
+  }
+
+  function molCardsBody() {
+    var h = '<p class="muted mem-notice">' + MEM_NOTICE + '。</p>';
+    h += '<section class="card"><div class="card-head"><h3>按类别分系列</h3>' +
+      badge('点卡片翻面') + badge('逐项记录，不加总') + '</div>' +
+      '<p class="muted">一张卡 = 一个可比序列。类别与顺序取唯一目录（与一图秀共用同一份），页面不做第二处分组。' +
+      '换实验室 / 换单位会拆成不同可比组，不跨组连线，也不自行换算。</p>' +
+      categoryLegend() + '</section>';
+    h += '<div style="margin-top:12px">' + metricCardsBody() + '</div>';
+    h += '<p class="note">本页不做任何加总：不把多个指标合成一个数字，也不给整体评级。' +
+      '颜色只标类别身份，不用红绿表示好坏。</p>';
+    return h;
+  }
+
+  function categoryLegend() {
+    var used = [];
+    metrics().forEach(function (m) { if (used.indexOf(m.cat) < 0) used.push(m.cat); });
+    return '<div class="row legend-row">' + catOrder().filter(function (c) { return used.indexOf(c.cat) >= 0; })
+      .map(function (c) {
+        return '<span class="legend-item"><span class="dot" style="background:' + esc(c.color) + '"></span>' + esc(c.label) + '</span>';
+      }).join('') + '</div>';
+  }
+
+  /* ================= 一图秀：三合同 + 指标选择窗口（16 号 R1–R12） =================
+     硬规则：
+     - R1 每条线独立归一化，图上必须可见"不可比"说明；不跨可比组连线、不自行换算。
+     - R2 单点不连线；窗口内无数据给空态。
+     - R3 治疗条与数据区分层：关掉治疗节点时曲线 d 属性不变。
+     - R4 只标末点，靠右时改 text-anchor=end。
+     - R7 指标选择 ≤4、列表独立滚动容器、≤900px 收进 <details> 仍可展开。
+     - R10 .chart-wrap 内横滚，390px 下 body 不溢出。
+     - R12 svg role=img + aria-label，每点有 <title>。
+     选择目录与指标卡共用同一份 categoryOrder（16 号 §3 + 24 号）；筛选变化只重绘 #chart-panel。 */
+  function oneChartSel() { return state.oneSel || []; }
+  function oneChartBody() {
+    var ms = metrics();
+    var sel = oneChartSel().filter(function (k) { return metricByKey(k); }).slice(0, 4);
+    var h = '<p class="muted mem-notice">' + MEM_NOTICE + '。</p>';
+
+    /* ---- 指标选择窗口（≤4 多选；按类别分组；独立滚动） ---- */
+    var picker = '<div class="muted">已选 <strong id="oneCount">' + sel.length + '</strong>/4（最多同时看 4 条线，超过会让图读不清）</div>' +
+      '<div class="metric-list" id="oneList">' + catOrder().filter(function (c) {
+        return ms.some(function (m) { return m.cat === c.cat; });
+      }).map(function (c) {
+        var items = ms.filter(function (m) { return m.cat === c.cat; });
+        return '<div class="pick-group"><div class="pick-head"><span class="dot" style="background:' + esc(c.color) + '"></span>' +
+          esc(c.label) + '</div>' + items.map(function (m) {
+            var pts = (m.points || []);
+            var last = pts.slice().sort(function (a, b) { return t(a.d) - t(b.d); })[pts.length - 1];
+            var on = sel.indexOf(m.key) >= 0;
+            return '<button type="button" class="pick-item' + (on ? ' on' : '') + '" data-act="one-pick" data-v="' +
+              esc(m.key) + '" aria-pressed="' + (on ? 'true' : 'false') + '">' +
+              '<span class="pick-name">' + esc(m.name) + '</span>' +
+              '<span class="pick-val">' + (pts.length ? fmtVal(m, last.v) + ' ' + esc(m.unit || '') : '还没有记录') + '</span>' +
+              '</button>';
+          }).join('') + '</div>';
+      }).join('') + '</div>';
+
+    h += '<section class="card"><div class="card-head"><h3>指标选择</h3>' + badge('最多 4 条线') + '</div>' +
+      /* R7：列表放进可展开的 <details>，但**不默认展开**（原型纪律：默认展开的 details 必须为 0）；
+         展开后是独立滚动容器，≤900px 折叠仍能展开。 */
+      '<details class="pick"><summary id="onePickSum">选要看哪几条（按类别分组）· 已选 ' + sel.length + '/4</summary>' + picker + '</details></section>';
+
+    /* ---- 图区：只重绘 #chart-panel ---- */
+    h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>一图秀</h3>' +
+      badge('归一化后叠看') + badge('不可比处断开') + '</div>' +
+      '<div class="row"><span class="muted">时间窗：</span>' +
+      [['all', '全部'], ['12m', '近 12 个月'], ['6m', '近 6 个月']].map(function (o) {
+        return '<button type="button" class="chip" data-act="one-range" data-v="' + o[0] + '" aria-pressed="' +
+          ((state.oneRange || 'all') === o[0]) + '">' + o[1] + '</button>';
+      }).join('') +
+      '<span class="muted" style="margin-left:12px">图层：</span>' +
+      '<button type="button" class="chip" data-act="one-toggle" data-v="treatment" aria-pressed="' +
+        (state.oneToggles.treatment ? 'true' : 'false') + '">治疗条</button>' +
+      '</div>' +
+      '<div id="chart-panel">' + chartPanel(sel) + '</div></section>';
+
+    /* ---- 图例与口径说明 ---- */
+    h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>怎么看这张图</h3></div>' +
+      '<ul class="note-list">' +
+      '<li>每条线各自归一化（以各自窗口内首个记录为 100%），所以<strong>纵向高度只表示变化幅度，不表示数值大小</strong>；要看原始值看指标卡。</li>' +
+      '<li>换实验室 / 换单位 / 未做 IS 标化的记录会<strong>断开成不同可比组</strong>，图上用断口表示——不跨组连线，也不自行换算。</li>' +
+      '<li>时间窗切换后图例仍标「全期」口径的原始值，屏幕上的高度不代表跨窗口可比。</li>' +
+      '<li>关掉「治疗条」只影响治疗行，曲线本身不变。</li>' +
+      '<li>本图不做加总，也不给整体评级。</li></ul></section>';
+    return h;
+  }
+
+  function chartPanel(sel) {
+    if (!sel.length) return '<p class="empty">还没有选择要看哪几条指标。上面勾选 1–4 项后这里会出现叠看曲线。</p>';
+    var ms = sel.map(metricByKey);
+    /* R2：窗口内没数据 → 空态（不是"数值 0"） */
+    var allEmpty = ms.every(function (m) { return !(m.points || []).length; });
+    if (allEmpty) return '<p class="empty">选中的指标在所选时间窗内还没有记录。</p>';
+
+    var W = 640, H = 300, padL = 56, padR = 20, padT = 24, padB = 56;
+    var series = ms.map(function (m, i) {
+      var pts = inWindow(m.points || [], state.oneRange || 'all').slice().sort(function (a, b) { return t(a.d) - t(b.d); });
+      var base = pts.length ? Number(pts[0].v) : 0;
+      return { m: m, pts: pts, base: base, color: catMeta(m.cat).color, idx: i };
+    });
+    var treated = state.oneToggles.treatment;
+    var plotH = H - padT - padB - (treated ? 22 : 0);
+    var svg = '<svg class="chart" viewBox="0 0 ' + W + ' ' + H + '" width="100%" height="' + H +
+      '" role="img" aria-label="选中的 ' + ms.length + ' 条指标归一化叠看曲线">';
+    svg += '<line x1="' + padL + '" y1="' + (padT + plotH) + '" x2="' + (W - padR) + '" y2="' + (padT + plotH) + '" stroke="#ded9d1"></line>';
+    svg += '<text x="' + (padL - 6) + '" y="' + (padT + 4) + '" text-anchor="end" class="ax">基线=100</text>';
+    svg += '<line x1="' + padL + '" y1="' + padT + '" x2="' + (W - padR) + '" y2="' + padT + '" stroke="#eee" stroke-dasharray="3 3"></line>';
+
+    series.forEach(function (s2) {
+      if (!s2.pts.length) return;
+      var maxPct = Math.max.apply(null, s2.pts.map(function (q) { return s2.base ? (Number(q.v) / s2.base) * 100 : 100; }));
+      var minPct = Math.min.apply(null, s2.pts.map(function (q) { return s2.base ? (Number(q.v) / s2.base) * 100 : 100; }));
+      var span = Math.max(1, maxPct - 1);
+      var sx = function (iso) {
+        var ts = s2.pts.map(function (q) { return t(q.d); });
+        var x0 = Math.min.apply(null, ts), x1 = Math.max.apply(null, ts);
+        return padL + (x1 === x0 ? (W - padL - padR) / 2 : (t(iso) - x0) / (x1 - x0) * (W - padL - padR));
+      };
+      var sy = function (v) {
+        var pct = s2.base ? (Number(v) / s2.base) * 100 : 100;
+        return padT + plotH - Math.max(0, Math.min(1, (pct - 1) / span)) * plotH;
+      };
+      s2.segs = segmentsOf(s2.pts);
+      s2.segs.forEach(function (seg) {
+        if (!seg.pts || seg.pts.length < 2) return;
+        svg += '<path class="series-line" data-key="' + esc(s2.m.key) + '" d="' +
+          smoothPath(seg.pts.map(function (q) { return [sx(q.d), sy(q.v)]; })) + '" fill="none" stroke="' +
+          s2.color + '" stroke-width="1.8"></path>';
+      });
+      s2.pts.forEach(function (q, i) {
+        svg += '<circle cx="' + sx(q.d).toFixed(1) + '" cy="' + sy(q.v).toFixed(1) + '" r="2.6" fill="' + s2.color +
+          '"><title>' + esc(s2.m.name) + ' ' + esc(q.d) + ' · ' + fmtVal(s2.m, q.v) + ' ' + esc(s2.m.unit || '') + '</title></circle>';
+      });
+      /* R4 只标末点；靠右改 text-anchor=end；多序列奇偶错开避免重叠 */
+      var last = s2.pts[s2.pts.length - 1];
+      var lx = sx(last.d), anchor = (W - padR - lx < 46) ? 'end' : 'start';
+      svg += '<text x="' + (anchor === 'end' ? lx - 4 : lx + 4) + '" y="' + (sy(last.v) + (s2.idx % 2 ? 12 : -4)) +
+        '" text-anchor="' + anchor + '" class="ax" fill="' + s2.color + '">' + esc(s2.m.name) + '</text>';
+    });
+    if (treated) {
+      svg += '<rect x="' + padL + '" y="' + (H - padB + 6) + '" width="' + (W - padL - padR) + '" height="8" fill="#efe9df"></rect>' +
+        '<text x="' + padL + '" y="' + (H - padB + 34) + '" class="ax">治疗条：按用药起止铺色（开关只影响这一行）</text>';
+    }
+    svg += '</svg>';
+
+    /* R1：不可比说明必须图上可见 */
+    var breaks = series.filter(function (s2) { return (s2.segs || []).some(function (g) { return g.gap; }); });
+    var h = '<div class="chart-wrap">' + svg + '</div>';
+    if (breaks.length) {
+      h += '<p class="note"><strong>不可比提示：</strong>' + breaks.map(function (s2) { return esc(s2.m.name); }).join('、') +
+        ' 在窗口内有跨越不同实验室 / 未 IS 标化 / 换单位的记录，曲线在此<strong>断开</strong>，不跨组相连、不自行换算。</p>';
+    }
+    /* 图例：标口径 */
+    h += '<div class="legend-row">' + series.map(function (s2) {
+      return '<span class="legend-item"><span class="dot" style="background:' + esc(s2.color) + '"></span>' +
+        esc(s2.m.name) + '<span class="muted">（基线 ' + fmtVal(s2.m, s2.base) + ' ' + esc(s2.m.unit || '') + ' · 全期口径）</span></span>';
+    }).join('') + '</div>';
+    return h;
+  }
+
+  /* 只重绘图表面板：不动页头、不动选择器的焦点与滚动位置，也不重建整页
+     （16 号：整页重渲染会丢焦点/翻转/滚动）。 */
+  function repaintChartPanel() {
+    var panel = $('chart-panel');
+    if (!panel) { render(); return; }
+    var sel = oneChartSel().filter(function (k) { return metricByKey(k); }).slice(0, 4);
+    panel.innerHTML = chartPanel(sel);
+    var cnt = $('oneCount'); if (cnt) cnt.textContent = String(sel.length);
+    var sm = $('onePickSum'); if (sm) sm.textContent = '选要看哪几条（按类别分组）· 已选 ' + sel.length + '/4';
+    document.querySelectorAll('[data-act="one-pick"]').forEach(function (b) {
+      var on = sel.indexOf(b.getAttribute('data-v')) >= 0;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    document.querySelectorAll('[data-act="one-range"]').forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-v') === (state.oneRange || 'all') ? 'true' : 'false');
+    });
+    document.querySelectorAll('[data-act="one-toggle"]').forEach(function (b) {
+      b.setAttribute('aria-pressed', state.oneToggles[b.getAttribute('data-v')] ? 'true' : 'false');
+    });
+  }
+
+  function inWindow(pts, range) {
+    if (range === 'all' || !range) return pts;
+    var months = { '12m': 12, '6m': 6, '3m': 3 }[range] || 12;
+    var latest = pts.reduce(function (a, q) { return t(q.d) > a ? t(q.d) : a; }, 0);
+    var cut = latest - months * 30.44 * 86400000;
+    return pts.filter(function (q) { return t(q.d) >= cut; });
+  }
+
+  /* ================= 临床试验：入组档案 + 三档匹配（MATCHING-SPEC §2/§3/§4） =================
+     红线（改前必读）：
+     - 只输出三档：已满足 / 可能冲突 / 无法判定。「缺失」永远流向无法判定，绝不流向已满足。
+     - 不输出匹配度百分比、不给推荐、不按匹配度排序、不用绿红给试验排名。
+     - 唯一允许的"指数"是**入组档案完整度 x/y**（字段数之比，不是分数）。
+     - 检索与匹配是两步：本页只展示"记录里有什么"与"逐条比对结果"，不代表入组资格。 */
+  function enrollmentOf(tag) { return (DATA.enrollment || {})[tag] || []; }
+  function matchOf(tag) { return (DATA.match || {})[tag] || null; }
+
+  function tierLabel(t) {
+    return t === 'satisfied' ? '已满足' : (t === 'conflict' ? '可能冲突' : '无法判定');
+  }
+  function tierClass(t) {
+    return t === 'satisfied' ? 'tier-ok' : (t === 'conflict' ? 'tier-warn' : 'tier-unknown');
+  }
+
+  /* 入组档案：分组展示，全部来自既有病情数据，不重复录入。缺失字段显式写"未记录"。 */
+  function enrollmentBody() {
+    var fs = enrollmentOf(state.profile);
+    if (!fs.length) return '<p class="empty">本档案还没有可用于比对的资料。</p>';
+    var present = fs.filter(function (f) { return f.present; }).length;
+    var missing = fs.filter(function (f) { return !f.present; });
+    var groups = [];
+    fs.forEach(function (f) { if (groups.indexOf(f.g) < 0) groups.push(f.g); });
+    var h = '<div class="card-head"><h3>入组档案</h3>' +
+      '<span class="muted">完整度 <strong>' + present + '/' + fs.length + '</strong> · 全部来自既有病情数据</span></div>';
+    h += '<p class="muted">完整度是"本档案有记录的字段数 / 本页会用到的字段数"，不是分数、不是匹配度；缺的字段会让对应条件显示「无法判定」。</p>';
+    if (missing.length) {
+      h += '<p class="note">本次比对会用到但缺失：' + missing.map(function (f) { return esc(f.k); }).join(' · ') +
+        ' —— 这些条件一律判「无法判定」，不会因为没记录就算满足。</p>';
+    }
+    groups.forEach(function (g) {
+      var rows = fs.filter(function (f) { return f.g === g; });
+      h += '<h4 class="sub">' + esc(g) + '</h4>' +
+        kvTable(rows.map(function (f) {
+          return [f.k, f.present ? String(f.v) : '（未记录）'];
+        }));
+    });
+    h += '<p class="muted">CML 的入组条件看的是分期、转录本类型、激酶区突变、既往 TKI 线数与器官功能；' +
+      '<strong>本页不做 IHC 标志物筛选</strong>（IHC 是实体瘤的分型工具，不适用于 CML）。</p>';
+    return h;
+  }
+
+  /* 三档结果：逐条列出"你的记录"与来源；汇总只计数，不给匹配度。 */
+  function matchBody() {
+    var a = matchOf(state.profile);
+    if (!a) return '<p class="empty">本档案还没有生成过比对结果。</p>';
+    var h = '<div class="card-head"><h3>逐条比对（三档）</h3>' +
+      badge('规则集 ' + a.ruleSetVersion) + badge('评估生成 ' + a.generatedAt) + '</div>';
+    h += '<p class="sum-line">已满足 <strong>' + a.done + '</strong> 项 · 可能冲突 <strong>' + a.conflict +
+      '</strong> 项 · 无法判定 <strong>' + a.undetermined + '</strong> 项 · 待确认规则 <strong>' +
+      a.pending.length + '</strong> 项<span class="muted">（汇总只计数，不给匹配度）</span></p>';
+
+    ['conflict', 'undetermined', 'satisfied'].forEach(function (tier) {
+      var rows = a.judgments.filter(function (j) { return j.tier === tier; });
+      if (!rows.length) return;
+      h += '<h4 class="sub ' + tierClass(tier) + '">' + tierLabel(tier) + '（' + rows.length + '）</h4>';
+      h += '<ul class="tier-list">' + rows.map(function (j) {
+        return '<li class="' + tierClass(tier) + '"><span class="tier-tag">' + tierLabel(tier) + '</span>' +
+          '<span class="tier-text">' + esc(j.text) + '</span>' +
+          '<span class="tier-mine">你的记录：' + esc(j.mine) + '</span>' +
+          '<span class="tier-src">来源：' + esc(j.src) + ' · 字段：' + esc(j.field) + '</span></li>';
+      }).join('') + '</ul>';
+    });
+
+    if (a.pending.length) {
+      h += '<h4 class="sub">待确认规则（' + a.pending.length + '）</h4>' +
+        '<p class="muted">这些条件原文没能结构化，<strong>不参与上面对比</strong>，需要你或医生对着原文确认。</p>' +
+        '<ul class="tier-list">' + a.pending.map(function (r) {
+          return '<li class="tier-unknown"><span class="tier-tag">待确认</span>' +
+            '<span class="tier-text">' + esc(r.text) + '</span>' +
+            '<span class="tier-src">来源：' + esc(r.src) + '</span></li>';
+        }).join('') + '</ul>';
+    }
+
+    h += '<p class="muted">排序按数据来源顺序，不按匹配度（按匹配度排序等于给推荐）。' +
+      '判定是确定性规则求值：同一份档案 + 同一版规则 = 同一结果，不由模型现算。</p>';
+    h += '<p class="note"><strong>这不是入组资格判断。</strong>本页只把"该问的问题"整理清楚：' +
+      '哪些条件你的记录看起来不冲突、哪些要再确认什么。入组判断属于医生与研究中心。</p>';
+    return h;
+  }
+
+  function trialListBody() {
+    var ts = trials();
+    if (!ts.length) {
+      return '<p class="empty">当前没有可用渠道的试验记录。</p>' +
+        '<p class="muted">注意区分两件事：「这个渠道里没有」与「这个渠道没在查」——后者不能说成前者。</p>';
+    }
+    var h = '<div class="card-head"><h3>试验登记摘录</h3>' + badge('登记状态，未核实') + '</div>';
+    h += '<p class="note">以下为<strong>演示虚构条目</strong>，不是真实临床试验信息；M4 接入 unified-trial-mcp 后整体替换。' +
+      '登记 ≠ 有效 ≠ 安全 ≠ 可入组。</p>';
+    h += ts.map(function (x) {
+      return '<div class="trial-item"><div class="trial-head"><strong>' + esc(x.title) + '</strong>' +
+        '<span class="muted">' + esc(x.id) + '</span></div>' +
+        '<div class="trial-meta">' + badge(x.phase) + badge(x.status) + '<span class="muted">申办：' + esc(x.sponsor) + '</span></div>' +
+        '<p class="muted">' + esc(x.note) + '</p>' +
+        '<p class="trial-foot muted">渠道：' + esc(x.channel) + ' · 最后核对 ' + esc(x.lastCheck) + '</p></div>';
+    }).join('');
+    h += '<div class="muted" style="margin-top:8px">本次检索覆盖 <strong>1/1</strong> 个渠道（演示渠道 · 就绪）· ' +
+      '未参与：ICTRP（未配置）· ChiCTR 在线（未配置）· chinadrugtrials（未配置）· 小胰宝归档（本癌种无覆盖）</div>';
+    return h;
+  }
+
+  function pageTrial() {
+    var a = matchOf(state.profile);
+    var fs = enrollmentOf(state.profile);
+    var present = fs.filter(function (f) { return f.present; }).length;
+    var h = '<div class="page-head"><h1>临床试验</h1>' + badge('档案 ' + state.profile) +
+      badge('演示数据') + badge('完整度 ' + present + '/' + fs.length) + badge('无匹配度百分比') + '</div>';
+
+    /* ① 入组档案（建档：基因 / 病理 / 细胞遗传学 / 治疗史 / 器官功能） */
+    h += '<section class="card">' + enrollmentBody() + '</section>';
+
+    /* ② 三档比对结果 */
+    h += '<section class="card" style="margin-top:12px">' + matchBody() + '</section>';
+
+    /* ③ 检索（与匹配是两步，不合并） */
+    h += '<section class="card" style="margin-top:12px">' + trialListBody() + '</section>';
+
+    /* ④ AI 协助：只把提示词填进输入框，不自动发送、不下结论 */
+    var mp = '请只根据我「入组档案」里的记录，对上面试验的入组条件逐条判断，' +
+      '只用「已满足 / 可能冲突 / 无法判定」三档逐条列出，每条写清「你的记录」与来源；' +
+      '缺失字段一律判「无法判定」；不输出匹配度百分比、不排序、不写哪条更适合我。' +
+      '入组资格以医生与研究中心为准。';
+    h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>AI 协助整理问题</h3>' +
+      aiForbiddenNote('trial') + '</div>' +
+      '<p class="muted">只把问题整理成清单：按钮只把提示词填进右上角输入框，<strong>不会自动发送</strong>，也不替你下结论。</p>' +
+      '<div class="row">' + aiButton('trial', '把比对提示词填进输入框', mp) + '</div></section>';
+
     h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>从哪里进来（场景路径）</h3></div>' +
       '<p class="muted">分子线趋势页的词表卡给出「临床研究核对字段」入口 → <a href="#mol">去分子线趋势与词表</a>；' +
-      '复诊资料包的来源页也引用本页字段清单 → <a href="#prep">去复诊准备</a>。</p>' +
+      '复诊资料包也引用本页字段清单 → <a href="#prep">去复诊准备</a>。</p>' +
       moreBlock('trial') + '</section>';
     return h;
   }
 
   /* ================= 路由与渲染 ================= */
-  var PAGE_FN = { dash: pageDash, mol: pageMol, med: pageMed, ae: pageAe, tfr: pageTfr, cost: pageCost, fert: pageFert, prep: pagePrep, docs: pageDocs, trial: pageTrial };
+  function pageOneChart() {
+    var h = '<div class="page-head"><h1>病情一图秀</h1>' + badge('档案 ' + state.profile + ' · ' + authorView()) +
+      badge('归一化叠看') + badge('不做加总') + '</div>';
+    return h + oneChartBody();
+  }
+
+  var PAGE_FN = { dash: pageDash, mol: pageMol, onechart: pageOneChart, med: pageMed, ae: pageAe, tfr: pageTfr, cost: pageCost, fert: pageFert, prep: pagePrep, docs: pageDocs, trial: pageTrial };
 
   function renderPage(route) {
     var fn = PAGE_FN[route] || pageDash;
@@ -1935,6 +2397,39 @@
       render(); return;
     }
     if (act === 'mol-demo') { state.molDemo = v; render(); return; }
+    if (act === 'one-pick') {
+      var sel = state.oneSel || [];
+      var i = sel.indexOf(v);
+      if (i >= 0) sel.splice(i, 1);
+      else if (sel.length < 4) sel.push(v);
+      else { var hh = $('aiHint'); if (hh) hh.textContent = '最多同时看 4 条线：先去一条再选新的。'; return; }
+      state.oneSel = sel;
+      repaintChartPanel();   /* R10/16 号：筛选只重绘面板，不整页重渲染 */
+      return;
+    }
+    if (act === 'one-range') { state.oneRange = v; repaintChartPanel(); return; }
+    if (act === 'one-toggle') {
+      state.oneToggles[v] = !state.oneToggles[v];
+      repaintChartPanel(); return;
+    }
+    if (act === 'mcard') {
+      /* 翻面：只改这一张卡的 class / aria-pressed / aria-hidden / inert，绝不 render()
+         （重渲染会重建 DOM，过渡动画与焦点都会丢）。每张卡独立。 */
+      var card = el.closest ? el.closest('.mcard') : el;
+      if (!card) return;
+      var key = card.getAttribute('data-key');
+      var on = card.getAttribute('aria-pressed') === 'true';
+      if (on) { state.molFlipped.delete(key); } else { state.molFlipped.add(key); }
+      card.classList.toggle('flipped', !on);
+      card.setAttribute('aria-pressed', on ? 'false' : 'true');
+      var fr = card.querySelector('.front'), bk = card.querySelector('.back');
+      [{ e: fr, hide: !on }, { e: bk, hide: on }].forEach(function (o) {
+        if (!o.e) return;
+        if (o.hide) { o.e.setAttribute('aria-hidden', 'true'); o.e.setAttribute('inert', ''); }
+        else { o.e.removeAttribute('aria-hidden'); o.e.removeAttribute('inert'); }
+      });
+      return;
+    }
     if (act === 'mol-tab') { state.molTab = v; goto('mol', v === 'lab' ? 'lab' : ''); return; }
     if (act === 'mol-lab') { state.molTab = 'lab'; goto('mol', 'lab'); return; }
     if (act === 'gloss') { state.gloss = (state.gloss === v) ? '' : v; render(); return; }

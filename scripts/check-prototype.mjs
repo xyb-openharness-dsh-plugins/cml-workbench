@@ -64,10 +64,21 @@ if (fails.length === 0) {
   if (!widthOk) F('panel/width', '面板默认 35% 或范围 25%–45% 缺失'); else O('panel/width', '面板 35% 默认 / 25–45% 范围在位');
   if (!/localStorage/.test(js)) F('panel/persist', '宽度偏好未持久化'); else O('panel/persist', '有偏好持久化');
 
-  /* --- 字号 12.5–15 --- */
-  const sizes = [...css.matchAll(/font-size:\s*([\d.]+)px/g)].map((m) => Number(m[1]));
-  const bad = sizes.filter((s) => s < 12.5 || s > 15);
-  if (bad.length) F('font/size', `越界字号 ${[...new Set(bad)].join(',')}（只允许 12.5–15）`); else O('font/size', `字号 ${[...new Set(sizes)].sort((a, b) => a - b).join('/')} 全部在 12.5–15`);
+  /* --- 字号 12.5–15（正文口径），含一条显式豁免 ---
+     豁免：指标卡正面的大数字 `.mval` 用 33px。依据是 24 号 §5「数字约33px、项目名15px、
+     正文12px、元信息11px」——这是家族约定的**卡片内视觉层级**，不是正文。豁免必须逐选择器
+     声明（不是按数值放行），否则字号纪律会悄悄失效；新增豁免要写进 DEV-REQUIREMENTS §七。 */
+  const NUMERAL_SELECTORS = ['\\.mval'];
+  const sizeRows = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)].flatMap(([, sel, body]) =>
+    [...body.matchAll(/font-size:\s*([\d.]+)px/g)].map((m) => ({ sel: sel.trim(), size: Number(m[1]) })));
+  const isNumeral = (sel) => NUMERAL_SELECTORS.some((re) => new RegExp(re).test(sel));
+  const bad = sizeRows.filter((r) => (r.size < 12.5 || r.size > 15) && !isNumeral(r.sel));
+  const sizes = sizeRows.map((r) => r.size);
+  if (bad.length) {
+    F('font/size', `越界字号 ${[...new Set(bad.map((r) => r.size + 'px@' + r.sel))].join(',')}（正文只允许 12.5–15）`);
+  } else {
+    O('font/size', `正文 ${[...new Set(sizes.filter((v) => v >= 12.5 && v <= 15))].sort((a, b) => a - b).join('/')} 全部在 12.5–15；豁免 ${[...new Set(sizeRows.filter((r) => isNumeral(r.sel)).map((r) => r.size + 'px@.mval'))].join(',') || '无'}`);
+  }
 
   /* --- [hidden] --- */
   if (!/\[hidden\]\s*\{[^}]*display:\s*none\s*!important/.test(css)) F('hidden', '缺 [hidden]{display:none!important}'); else O('hidden', '[hidden] 规则在位');

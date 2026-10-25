@@ -16,7 +16,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 P2 = ROOT / "prototypes" / "v0.2"
-PAGES = ["dash", "mol", "med", "ae", "tfr", "cost", "fert", "prep", "docs", "trial"]
+PAGES = ["dash", "mol", "onechart", "med", "ae", "tfr", "cost", "fert", "prep", "docs", "trial"]
 FORMS = [("cost", "cost-new", "#cost-drug"), ("ae", "ae-new", "#ae-w"),
          ("med", "rx-new", "#rx-drug"), ("mol", "mol-manual", "#f-v"), ("mol", "mol-new", "#f-v")]
 

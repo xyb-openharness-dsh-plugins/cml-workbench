@@ -325,3 +325,82 @@ svg.chart .legend{fill:var(--muted)}
   .topbar{padding:8px}
   #view{padding:8px}
 }
+
+/* ===== 临床试验：入组档案 + 三档比对（MATCHING-SPEC §4.4 表达约束） =====
+   颜色只用来区分三档的身份，不做"好/坏"评价（不用红绿排名）。 */
+.sum-line { margin: 8px 0 12px; font-size: 13px; }
+.sum-line strong { font-size: 15px; }
+h4.sub { margin: 14px 0 6px; font-size: 13px; font-weight: 600; }
+.tier-list { list-style: none; margin: 0; padding: 0; }
+.tier-list li { border-left: 3px solid var(--line); padding: 6px 0 6px 10px; margin-bottom: 8px; }
+.tier-list li.tier-ok { border-left-color: var(--accent); }
+.tier-list li.tier-warn { border-left-color: var(--warn); }
+.tier-list li.tier-unknown { border-left-color: var(--line); }
+.tier-tag { display: inline-block; font-size: 12.5px; font-weight: 600; margin-right: 8px; }
+.tier-list li.tier-warn .tier-tag { color: var(--warn); }
+.tier-text { font-size: 13px; }
+.tier-mine, .tier-src { display: block; font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+
+/* 试验条目：中性列表，不排名 */
+.trial-item { border: 1px solid var(--line); border-radius: var(--radius); padding: 10px; margin-bottom: 10px; }
+.trial-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 13px; }
+.trial-meta { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 6px 0; font-size: 12.5px; }
+.trial-foot { font-size: 12.5px; margin: 4px 0 0; }
+
+/* ===== 指标卡：分类 + 分系列 + 3D 翻面（24 号 §5 / 16 号 §2） =====
+   固定 276px 是家族约定值：改它必须同时改 24 号 §6 的三档断言（1440/1080/860 列数 2/2/1、卡高恒定）。 */
+.cat-block { margin-bottom: 18px; }
+.cat-head { font-size: 15px; font-weight: 600; margin: 0 0 6px; padding-left: 8px;
+  border-left: 3px solid var(--line); display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.cat-count { font-size: 12.5px; font-weight: 400; color: var(--muted); }
+.cat-block > .muted { margin: 0 0 8px; font-size: 12.5px; }
+
+.mcard-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 959px) { .mcard-grid { grid-template-columns: minmax(0, 1fr); } }
+
+/* 外卡：固定高 + perspective。按钮语义（可点击、可聚焦），但不是一个内嵌 button。 */
+.mcard { display: block; width: 100%; height: 276px; padding: 0; border: 0; background: transparent;
+  perspective: 1100px; cursor: pointer; text-align: left; font: inherit; color: inherit; }
+.mcard:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mcard-inner { position: relative; display: block; width: 100%; height: 100%;
+  transform-style: preserve-3d; transition: transform 480ms cubic-bezier(.2,.7,.2,1); }
+.mcard.flipped .mcard-inner { transform: rotateY(180deg); }
+@media (prefers-reduced-motion: reduce) { .mcard-inner { transition: none; } }
+
+.mface { position: absolute; inset: 0; box-sizing: border-box; padding: 20px; border-radius: 18px;
+  background: var(--card); border: 1px solid var(--line); backface-visibility: hidden;
+  -webkit-backface-visibility: hidden; display: flex; flex-direction: column; gap: 4px; overflow: hidden; }
+.mface.back { transform: rotateY(180deg); }
+.mcard:hover .mface { border-color: #c8c2b8; }   /* hover 不翻面，只提示可点 */
+
+.eyebrow { display: flex; align-items: center; gap: 6px; font-size: 12.5px; }
+.eyebrow .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+.mname { font-size: 15px; font-weight: 600; }
+.mval { font-size: 33px; font-weight: 600; line-height: 1.1; margin-top: 2px; }
+.mval .munit { font-size: 13px; font-weight: 400; color: var(--muted); margin-left: 4px; }
+.mval.mnone, .mval.mqual { font-size: 15px; font-weight: 600; color: var(--muted); }
+.munit { font-size: 12.5px; color: var(--muted); }
+.mmeta { font-size: 12.5px; color: var(--muted); display: block; line-height: 1.45; }
+.mhint { font-size: 12.5px; color: var(--muted); margin-top: auto; }
+.mini { display: block; margin: 4px 0; }
+.mini-chart { display: block; width: 100%; height: auto; }
+
+/* ===== 一图秀：指标选择窗口（16 号 R7） ===== */
+.pick > summary { cursor: pointer; font-size: 13px; padding: 4px 0; }
+.metric-list { max-height: 300px; overflow-y: auto; border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 8px; margin-top: 6px; -webkit-overflow-scrolling: touch;
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 18px), transparent); }
+.pick-group { margin-bottom: 10px; }
+.pick-head { font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.pick-head .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+.pick-item { display: flex; justify-content: space-between; gap: 8px; width: 100%; font: inherit;
+  font-size: 13px; text-align: left; padding: 5px 8px; margin-bottom: 3px; cursor: pointer;
+  border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; }
+.pick-item.on { background: var(--fg); color: #fff; border-color: var(--fg); }
+.pick-item.on .pick-val { color: #e8e4dc; }
+.pick-val { font-size: 12.5px; color: var(--muted); }
+.legend-row { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 8px; font-size: 12.5px; }
+.legend-item { display: inline-flex; align-items: center; gap: 5px; }
+.legend-item .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.note-list { margin: 6px 0 0; padding-left: 18px; font-size: 12.5px; color: var(--muted); line-height: 1.6; }
+svg .ax { font-size: 12.5px; fill: var(--muted); }

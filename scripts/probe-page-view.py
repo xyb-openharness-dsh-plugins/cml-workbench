@@ -16,9 +16,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 P2 = ROOT / "prototypes" / "v0.2"
-PAGES = [("dash", "看板"), ("mol", "分子线"), ("med", "服药线"), ("ae", "副作用日志"),
-         ("tfr", "TFR 档案"), ("cost", "费用记录"), ("fert", "生育计划"),
-         ("prep", "复诊准备"), ("docs", "资料导入"), ("trial", "临床试验")]
+PAGES = [("dash", "看板"), ("mol", "分子线"), ("onechart", "病情一图秀"), ("med", "服药线"),
+         ("ae", "副作用日志"), ("tfr", "TFR 档案"), ("cost", "费用记录"),
+         ("fert", "生育计划"), ("prep", "复诊准备"), ("docs", "资料导入"), ("trial", "临床试验")]
 WIDTHS = [1440, 1024, 800, 420]
 
 

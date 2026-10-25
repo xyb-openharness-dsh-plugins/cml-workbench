@@ -1,16 +1,16 @@
 # PROTOTYPE-FIXES · P0 修复留痕（M2）
 
-日期：**2026-10-25**（第二轮复审后修订）。对象：`prototypes/v0.2/{index.html,app.js,style.css,demo-data.js}`。
-评审来源：`docs/PROTOTYPE-REVIEW.md`（首评 P0=11 / P1=18 / P2=12；X1=X2=X3=0, X4=1）与 `docs/PROTOTYPE-REVIEW-2.md`（复审剩 P0=2）。
+日期：**2026-10-25**（第三轮复审后修订：三项能力实装，见文末段）。对象：`prototypes/v0.2/{index.html,app.js,style.css,demo-data.js}`。
+评审来源：`docs/PROTOTYPE-REVIEW.md`（首评 P0=11 / P1=18 / P2=12；X1=X2=X3=0, X4=1）、`docs/PROTOTYPE-REVIEW-2.md`（复审剩 P0=2）、`docs/PROTOTYPE-REVIEW-3.md`（三审剩 P0=2，X1–X4=(1,1,0,1)）。
 
 **当前冻结指纹（改动后必同步本表；复审曾抓到本文件写的指纹与实物不符——这是被记 P1 的原因之一）**
 
 | 文件 | sha256 前 8 | 行数 |
 | --- | --- | --- |
-| `prototypes/v0.2/app.js` | `f1e01390` |     2173 |
-| `prototypes/v0.2/index.html` | `816d476c` | — |
-| `prototypes/v0.2/style.css` | `4c4cc7f4` |      317 |
-| `prototypes/v0.2/demo-data.js` | `1d38e5e2` | 1（单行 JSON，由 `demo/build-demo-data.mjs` 生成） |
+| `prototypes/v0.2/app.js` | `e53cbfeb` | 2726 |
+| `prototypes/v0.2/index.html` | `3e2fcbbc` | 299 |
+| `prototypes/v0.2/style.css` | `4d7f33bc` | 406 |
+| `prototypes/v0.2/demo-data.js` | `d4fbc2b1` | 2（34046 字节） |
 
 > 口径：本文件只记**实测到的数字**。凡未验证的，标「未验证」。
 
@@ -63,3 +63,46 @@
 
 ### 本轮四套检查器（改后实跑）
 `check-prototype.mjs` pass · `probe-ip-matrix.py` pass（failures=[]）· `probe-write-paths.py` pass · `probe-page-view.py` pass（4 档溢出 0、字号越界 0、渲染态禁词 0、无来源引用 0）
+
+## 2026-10-25 第三轮复审后的三项能力实装（M2 增补）
+
+本轮用户提出三条新需求（指标卡分系列+3D 翻面 / 一图秀指标选择窗口 / 临床试验建档+三档匹配），
+按脚手架 24-METRIC-TREND-TAB-DESIGN、16-ONE-CHART-SPEC、27-TRACKS-AND-METRIC-CARDS 与 MATCHING-SPEC 实装。
+
+### 当前实测指纹
+
+| 文件 | sha256 前 8 | 行数 |
+| --- | --- | --- |
+| `prototypes/v0.2/app.js` | `e53cbfeb` | 2726 |
+| `prototypes/v0.2/index.html` | `3e2fcbbc` | 299 |
+| `prototypes/v0.2/style.css` | `4d7f33bc` | 406 |
+| `prototypes/v0.2/demo-data.js` | `d4fbc2b1` | 2（34046 字节） |
+
+### 做了什么
+
+| 项 | 内容 | 怎么验的 |
+| --- | --- | --- |
+| 指标卡 | 分子线新 tab「指标卡（分系列·翻面）」；7 张卡按 4 类分组，类别标题＝名+项数+有记录数；唯一 `CATEGORY_ORDER`，与一图秀共用 | Playwright：7 卡、rect 366×276、翻面位移 0.0、`matrix3d`、`aria-pressed` 独立、再点回正面 |
+| 3D 合同 | 276px 外卡 / 半径 18 / 内边距 20 / 间距 16 / 480ms `cubic-bezier(.2,.7,.2,1)` / `perspective:1100px` / `preserve-3d` / 双面 `backface-visibility:hidden` | `getComputedStyle` 实测 transition 与 transform；`prefers-reduced-motion` 走 `transition:none` |
+| 不重渲染 | 翻面只改 class + aria + `aria-hidden`/`inert`，`return` 前不调 `render()` | 点击后 DOM 节点同一性保持，过渡完整播放 |
+| 一图秀 | 新一级页 `#onechart`；指标选择窗口按类别分组、独立滚动、最多 4 条；时间窗 + 治疗条开关 | 第 5 次点击被拒并提示；`details` 默认收起可展开 |
+| 只重绘面板 | `repaintChartPanel()` 只换 `#chart-panel` innerHTML，同步计数与 aria-pressed | `window.__stamp === document.querySelector('#chart-panel')` 为 True |
+| R3 分层 | 关治疗条后曲线 `d` 逐条不变 | 前后 `.series-line` 的 `d` 字符串完全相等（True） |
+| R1 不可比 | A 档案补一条外院 `is_std=0` 记录，使「不可比提示」在页面上真实出现 | A/B 两档均命中「不可比提示」与「断开」 |
+| 临床试验 | 入组档案 18 字段/7 组 + 11 条规则 + 三档确定性求值；完整度 x/y；汇总只计数；渠道覆盖如实 | A 14/18（7/0/3/1）、B 13/18（5/1/4/1）；全页无匹配度百分比/推荐/排序 |
+
+### 本轮修掉的实现错误（自查，不是复审提出的）
+
+1. `q.date` / `pt.date` 与数据字段 `d` 不符 → 卡片全部显示 `undefined`；全局替换后 `grep -c "\.date"` = 0。
+2. `segmentsOf()` 返回 `[{pts, gap}]` 而非数组 → `miniSVG` 里 `seg.map is not a function`（页面整页白屏）；改迭代 `seg.pts`。
+3. 免责文案把「总分/综合评分/健康指数」写进页面 → 反而触发 27 号验收；改为「不把多个指标合成一个数字，也不给整体评级」。
+4. `<details class="pick" open>` → `foldout/open` 断言（默认展开必须 0）失败；去掉 `open`。
+5. `svg .ax { font-size: 11px }` → 字号断言越界；改 12.5px。
+6. 卡片网格断点原写 700px → 27 号 §4.3 要求 1440/1080/860 = 2/2/1，改 `@media (max-width:959px)`。
+7. `onechart` 初版是**孤儿页**（无入站链接、无场景路径经过）→ `probe-ip-matrix.py` X1 抓到；在看板「分子线速览」卡与试验页加入口，并在 `docs/INTERACTION-DESIGN.md` 补 S10/S11 与覆盖行。
+8. A 的 `pcr` 注释写「8 月起换实验室（不可比）」，但 4 条记录全在同一实验室 → 注释与数据矛盾；补真实外院记录并把注释改对。
+
+### 检查器口径改动
+
+- `scripts/check-prototype.mjs`：字号断言由「一律 12.5–15」改为**按选择器豁免**（`NUMERAL_SELECTORS = ['\.mval']`），因为 24 号 §5 要求数字约 33px。豁免必须逐选择器声明，新增豁免须记入 `docs/DEV-REQUIREMENTS-2026-10-25.md` §七。
+- `scripts/probe-page-view.py`、`scripts/probe-ip-matrix.py`、`scripts/probe-write-paths.py`：路由表补 `onechart`，使新页与既有 10 页受同一套宽度/溢出/禁词/入口扫描。
