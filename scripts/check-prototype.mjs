@@ -111,6 +111,58 @@ if (fails.length === 0) {
   if (hits.length) F('wording', `禁词命中（可见文本）：${hits.join('、')}`); else O('wording', `禁词 0 命中（已剥离注释；引用原文 ${quoted.length} 处单列）`);
   if (quotedNoSrc.length) F('wording/quote', `引号内出现决策类词且来源不清：${quotedNoSrc.length} 处`); else O('wording/quote', '引用原文中无未标来源的决策词');
 
+  /* --- 临床试验三档匹配表达约束（MATCHING-SPEC §4.4） ---
+     禁：匹配度百分比 / 高匹配 / 推荐 / 最适合 / 不符合条件 / 按匹配度排序 / 绿红排名。
+     例外：**否定式说明**（"不给匹配度""不是匹配度""无匹配度百分比"）是合规的，必须放行——
+     否则免责说明本身会被当成违规（LESSONS 第 10 类：免责措辞自己踩禁词）。
+     判法：先剥离否定语境（含 "不/无/非/别" 的同一短语窗口），再扫。 */
+  const trialBan = ['匹配度百分比', '高匹配', '最适合', '不符合条件', '按匹配度排序', '综合评分', '健康指数'];
+  const negCtx = /(不给|不是|不按|不输出|无|不提供|不写|不做)[^。；\n]{0,20}$/;
+  const trialHits = [];
+  for (const w of trialBan) {
+    let idx = -1;
+    while ((idx = visible.indexOf(w, idx + 1)) !== -1) {
+      const before = visible.slice(Math.max(0, idx - 28), idx);
+      if (negCtx.test(before)) continue; // 否定语境，合规
+      trialHits.push(w);
+    }
+  }
+  // 「匹配度」+ 数字/百分号 = 真正的匹配度百分比（比只禁字面"匹配度百分比"更严，
+  //  因为写成 `匹配度 82%` 会绕过短语匹配 —— 这是负向测试抓出来的）
+  const pctHits = [...visible.matchAll(/匹配度[^0-9%。；\n]{0,6}[0-9]{1,3}\s*[%％]/g)]
+    .map((m) => m[0]).filter((t) => {
+      const i = visible.indexOf(t);
+      return !negCtx.test(visible.slice(Math.max(0, i - 28), i));
+    });
+
+  // 「推荐」单独处理：只禁"推荐这家/推荐你去/首选推荐"这类给出选择的用法
+  const recHits = [...visible.matchAll(/(首选|建议|强烈)?推荐[^。；\n]{0,10}/g)]
+    .map((m) => ({ t: m[0], before: visible.slice(Math.max(0, m.index - 28), m.index) }))
+    .filter((r) => !negCtx.test(r.before))
+    .map((r) => r.t);
+  if (trialHits.length || recHits.length || pctHits.length) {
+    F('matching/expressions', `临床试验表达违规：${[...new Set(trialHits)].join('、')}${pctHits.length ? ' 匹配度数值 ' + pctHits.length + ' 处（' + pctHits.join(' / ') + '）' : ''}${recHits.length ? ' 推荐类 ' + recHits.length + ' 处' : ''}`);
+  } else {
+    O('matching/expressions', '三档表达合规（无匹配度百分比/高匹配/推荐/排序，否定式说明已放行）');
+  }
+
+  /* --- 缺字段必须流向「无法判定」，不得流向「已满足」（MATCHING-SPEC §4 铁律）
+     注意：求值在数据构建器（demo/build-demo-data.mjs 的 evalRule/tier）里，不在 app.js；
+     所以这一条要读构建器源码，不能只扫前端。 */
+  const builderPath = join(P2, '..', '..', 'demo', 'build-demo-data.mjs');
+  let builder = '';
+  try { builder = readFileSync(builderPath, 'utf8'); } catch { /* 没有构建器就跳过，不误报 */ }
+  if (!builder) {
+    O('matching/ironlaw', '未找到数据构建器，跳过（本条只在前端实现时才有意义）');
+  } else if (!/undetermined/.test(builder)) {
+    F('matching/ironlaw', '数据构建器里找不到 undetermined 三档枚举');
+  } else {
+    const tierBody = builder.slice(builder.indexOf('const tier ='), builder.indexOf('const tier =') + 300);
+    const guardsMissing = /(undefined|null|''|"")/.test(tierBody) && /undetermined/.test(tierBody);
+    if (!guardsMissing) F('matching/ironlaw', '"缺失→undetermined"的判定分支找不到，铁律可能被绕过（tier 函数前 300 字内未见 undefined/null/空串 → undetermined）');
+    else O('matching/ironlaw', '缺失/未知流向 undetermined（铁律在位，tier 函数已核）');
+  }
+
   /* --- 判断色阶（红绿好坏） --- */
   if (/--good|--bad|--ok-green|is-normal|is-abnormal/.test(src)) F('color/judgement', '出现好坏语义色阶'); else O('color/judgement', '无好坏语义色阶');
 
