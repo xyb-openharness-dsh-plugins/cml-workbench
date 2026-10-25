@@ -1716,7 +1716,7 @@
       /* P1-4（第四轮评审）：更正写进了 ex().docVersions，但页面从不渲染它 → 用户点完更正看不到新值，
          产物不可观察（第三轮 P1-1 同类问题在这条路径复发）。版本链必须可见：原值、新值、时间、记录者、来源。 */
       (function () {
-        var vs = (ex().docVersions || []).filter(function (x) { return true; });
+        var vs = ex().docVersions || [];   /* ex() 按档案取，版本链天然不串档 */
         var head = '<h4 class="sub">更正记录（版本链 · 原行保留不覆盖）' + (vs.length ? ' · ' + vs.length + ' 条' : '') + '</h4>';
         if (!vs.length) return head + '<p class="muted">还没有更正。点任一行「更正」后，这里会按时间列出原值 → 新值（原值不会被覆盖）。</p>';
         return head + dataTable(['候选号', '原值', '更正为', '日期', '记录者', '来源'], vs.map(function (x) {

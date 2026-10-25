@@ -7,7 +7,7 @@
 
 | 文件 | sha256 前 8 | 行数 |
 | --- | --- | --- |
-| `prototypes/v0.2/app.js` | `cbb733a1` | 2805 |
+| `prototypes/v0.2/app.js` | `6519efde` | 2805 |
 | `prototypes/v0.2/index.html` | `0878357c` | 312 |
 | `prototypes/v0.2/style.css` | `4d7f33bc` | 406 |
 | `prototypes/v0.2/demo-data.js` | `d4fbc2b1` | 2（34046 字节） |
@@ -73,7 +73,7 @@
 
 | 文件 | sha256 前 8 | 行数 |
 | --- | --- | --- |
-| `prototypes/v0.2/app.js` | `cbb733a1` | 2805 |
+| `prototypes/v0.2/app.js` | `6519efde` | 2805 |
 | `prototypes/v0.2/index.html` | `0878357c` | 312 |
 | `prototypes/v0.2/style.css` | `4d7f33bc` | 406 |
 | `prototypes/v0.2/demo-data.js` | `d4fbc2b1` | 2（34046 字节） |
