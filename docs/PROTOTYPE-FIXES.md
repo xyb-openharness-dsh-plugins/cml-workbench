@@ -7,8 +7,8 @@
 
 | 文件 | sha256 前 8 | 行数 |
 | --- | --- | --- |
-| `prototypes/v0.2/app.js` | `6519efde` | 2805 |
-| `prototypes/v0.2/index.html` | `0878357c` | 312 |
+| `prototypes/v0.2/app.js` | `f3ca3989` | 2816 |
+| `prototypes/v0.2/index.html` | `0fac99a8` | 319 |
 | `prototypes/v0.2/style.css` | `4d7f33bc` | 406 |
 | `prototypes/v0.2/demo-data.js` | `d4fbc2b1` | 2（34046 字节） |
 
@@ -73,8 +73,8 @@
 
 | 文件 | sha256 前 8 | 行数 |
 | --- | --- | --- |
-| `prototypes/v0.2/app.js` | `6519efde` | 2805 |
-| `prototypes/v0.2/index.html` | `0878357c` | 312 |
+| `prototypes/v0.2/app.js` | `f3ca3989` | 2816 |
+| `prototypes/v0.2/index.html` | `0fac99a8` | 319 |
 | `prototypes/v0.2/style.css` | `4d7f33bc` | 406 |
 | `prototypes/v0.2/demo-data.js` | `d4fbc2b1` | 2（34046 字节） |
 
@@ -148,3 +148,15 @@ R3 与「全期口径」这两条，在我方自检与第三轮复审里都曾"�
 
 **P1-10 的修法值得记一笔**：自述与实测不符时，正确做法是**改自述**，不是伪造提示让自述成立。
 B 档案客观没有不可比记录，页面不显示提示是对的。
+
+### 自查另外发现的两处真缺陷（不在第四轮 11 条 P1 里）
+
+| # | 缺陷 | 为什么它是真缺陷 | 修法 |
+| --- | --- | --- | --- |
+| 自查-1 | **同一份数据两个"最新值"**：`metrics()` 不合并本机写入，`metricByKey()` 合并 → 写入一条复查记录后，趋势图 6 点、可比性表 6 行，但**指标卡与一图秀选择器仍显示旧的 `0.086`** | 用户刚录入 `0.045`，卡片却告诉他最新是 `0.086`。与"数据只有一个来源"直接冲突 | 把合并点收敛到 `metrics()` 一处（新增 `baseMetrics()` 只读演示数据），`metricByKey()` 改为纯查找（避免双重合并） |
+| 自查-2 | **指标卡 tab 从 lab 出发到不了**：`parseHash()` 只认 `lab`，其余一律 `trend`，`cards` 不进 hash → lab → cards 被 hashchange 打回 trend | 从 CML-LAB 子页想去看指标卡，点 tab 没反应 | 三个 tab 都进 hash（`#mol/cards`）；`mol-tab` handler 改为统一走 `goto('mol')` |
+
+实测：写入 `2026-10-20 0.045` 后，pcr 卡显示 `0.045 · 已记录 6 次 · 最近采样 2026-10-20`；lab → cards 可达、7 张卡渲染、无 pageerror。
+
+**这两条值得记的教训**：它们都不是"某条断言不严"，而是**同一种语义在两处各写一遍**（合并逻辑、tab 白名单）。
+第四轮 P0-4（翻面状态不分档案）也是同一形状。**新增"按档案/按子页"的状态时，先找有没有第二处白名单/第二个合并点。**

@@ -87,7 +87,23 @@
     return dec == null ? String(v) : v.toFixed(dec);
   }
   function profile() { return DATA.profiles[state.profile] || {}; }
-  function metrics() { return (DATA.metrics && DATA.metrics[state.profile]) || []; }
+  /* 全量指标视图 = 演示数据 + 本机内存态写入（合并点唯一，就在这）。
+     2026-10-25 自查发现：指标卡与一图秀选择器原先直接读 `metrics()`（未合并 ex()），
+     写入一条复查记录后，趋势图变成 6 点、可比性表 6 行，但指标卡与选择器**仍显示旧的最近值 0.086**——
+     同一份数据出现两个"最新值"，正是前几轮反复栽的那类问题。现在 metrics() 本身就合并，
+     所有读取方（卡片 / 选择器 / 趋势 / 表）走同一份。 */
+  function baseMetrics() { return (DATA.metrics && DATA.metrics[state.profile]) || []; }
+  function metrics() {
+    return baseMetrics().map(function (m) {
+      if (m.key === 'pcr' && (ex().pcr || []).length) {
+        return Object.assign({}, m, { points: m.points.concat(ex().pcr) });
+      }
+      if (m.key === 'cost' && (ex().cost || []).length) {
+        return Object.assign({}, m, { points: m.points.concat(costExtraPoints(ex().cost)) });
+      }
+      return m;
+    });
+  }
   /* 本机内存态新增的费用条目 → 月度聚合点（每档案独立，刷新即消失） */
   function costExtraPoints(entries) {
     var byMonth = {};
@@ -102,22 +118,15 @@
   }
   /* P0-5：本机写入必须真的改变取数（趋势图新增点 / 费用聚合变化） */
   function metricByKey(k) {
+    /* 合并已在 metrics() 里做过，这里只做查找——避免同一处写入被合并两次 */
     var ms = metrics();
-    for (var i = 0; i < ms.length; i++) {
-      if (ms[i].key !== k) continue;
-      var m = ms[i];
-      if (k === 'pcr' && (ex().pcr || []).length) {
-        m = Object.assign({}, m, { points: m.points.concat(ex().pcr) });
-      }
-      if (k === 'cost' && (ex().cost || []).length) {
-        m = Object.assign({}, m, { points: m.points.concat(costExtraPoints(ex().cost)) });
-      }
-      return m;
-    }
+    for (var i = 0; i < ms.length; i++) if (ms[i].key === k) return ms[i];
     return null;
   }
   function trials() { return DATA.trials || []; }
-  /* P0-11①：双主体＝同一患者的两条记录视角，不是两位患者 */
+  /* 双主体：作者视角按档案取（A 患者本人 / B 家属代记）。
+     注意：演示档案 A/B 是**两位不同患者**，不是同一人的两个视角——此前注释写过「同一患者的两条记录视角」，
+     与数据矛盾，2026-10-25 P0-11 已按事实改正，此处注释同步。 */
   function authorRole() { return state.profile === 'B' ? '家属代记' : '患者本人'; }
   function authorView() { return state.profile === 'B' ? '家属代记视角' : '患者本人视角'; }
   /* 双主体：同一档案内一条记录可由本人或家属代记。
@@ -2247,7 +2256,9 @@
     var r = parts[0];
     if (ROUTES.indexOf(r) < 0) r = 'dash';
     if (r === 'med' && ['checkin', 'calendar', 'rx'].indexOf(parts[1]) >= 0) state.medTab = parts[1];
-    if (r === 'mol') state.molTab = (parts[1] === 'lab') ? 'lab' : 'trend';
+    /* 2026-10-25 自查发现：原来只认 lab / 其余一律 trend，于是「tab 是 cards 时点 lab→cards」
+       会被 hashchange 打回 trend——指标卡 tab 从 lab 出发根本到不了。现在三个 tab 都进 hash。 */
+    if (r === 'mol') state.molTab = (['lab', 'cards'].indexOf(parts[1]) >= 0) ? parts[1] : 'trend';
     return r;
   }
 
@@ -2376,7 +2387,7 @@
     state.route = route;
     if (sub) { if (route === 'med') state.medTab = sub; }
     var h = '#' + route + (route === 'med' && state.medTab !== 'checkin' ? '/' + state.medTab : '') +
-      (route === 'mol' && state.molTab === 'lab' ? '/lab' : '');
+      (route === 'mol' && state.molTab !== 'trend' ? '/' + state.molTab : '');
     if (typeof location !== 'undefined' && location.hash !== h) location.hash = h;
     render();
     try { window.scrollTo(0, 0); } catch (e) { /* ignore */ }
@@ -2501,7 +2512,7 @@
       });
       return;
     }
-    if (act === 'mol-tab') { state.molTab = v; goto('mol', v === 'lab' ? 'lab' : ''); return; }
+    if (act === 'mol-tab') { state.molTab = v; goto('mol'); return; }
     if (act === 'mol-lab') { state.molTab = 'lab'; goto('mol', 'lab'); return; }
     if (act === 'gloss') { state.gloss = (state.gloss === v) ? '' : v; render(); return; }
     if (act === 'mol-save') { saveMol(); return; }
