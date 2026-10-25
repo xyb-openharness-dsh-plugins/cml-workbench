@@ -22,7 +22,7 @@
 | M6 装机 | tgz 四要素对照；bundles 登记；真机走查；真机截图 README；V2/V3 用户确认 | ⏳ | — |
 | M7 发布 | tag + Release（tgz+sha256）+ CHANGELOG 发版段 | ⏳ | — |
 | M8 回填 | BACKLOG #20 行状态列（🔵 版本+日期+依据）；PR 合并 | ⏳ | — |
-| M9 回流 | 新坑入 DEV-REQUIREMENTS；通用坑入 starter LESSONS；≥1 条下一轮直接受益；check-starter+npm test | ⏳ | — |
+| M9 回流 | 新坑入 DEV-REQUIREMENTS；通用坑入 starter LESSONS；≥1 条下一轮直接受益；check-starter+npm test | 🔧 首笔已回流（starter **1.5.8**：check-probe-coverage + LESSONS 第 10 类，已合 main）；M9 收尾待 M2–M8 完成后再补一轮 | — |
 
 ## 闸口
 | 闸口 | 内容 | 签认 |
