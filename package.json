@@ -20,7 +20,7 @@
     "NOTICE.md"
   ],
   "scripts": {
-    "check": "node --check dsh/index.js && node --check lib/client.js && node scripts/check-workbench-package.mjs . && node scripts/check-host-contract.mjs",
+    "check": "node --check dsh/index.js && node --check lib/client.js && node scripts/check-workbench-package.mjs . && node scripts/check-host-contract.mjs && node scripts/check-prototype.mjs && node scripts/check-demo-data.mjs && node scripts/check-probe-coverage.mjs && node scripts/check-readme-assets.mjs",
     "check:host": "node scripts/check-host-contract.mjs",
     "test": "node --test test/*.test.mjs",
     "audit": "node scripts/check-conformance.mjs .",
