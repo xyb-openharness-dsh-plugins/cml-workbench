@@ -233,3 +233,26 @@ npm→GitHub Release→源码的来源选择由市场合同决定，锁定版本
    `repository: CONST`（常量在同一文件里是 GitHub URL 字面量）。
 6. **`check-workbench-package.mjs` 只认字面量 repository**：`repository: REPO` 报
    `Canonical repository required in descriptor`。描述符里必须写**字面量 URL**，不能走常量。
+
+### 第十类（本轮新增）：Desktop GUI 起不来 ≠ 工作台装错了——用「摘掉自己的包再启一次」判归属
+
+本机 2026-10-25 实测：`open -a "DSH Desktop.app"` 之后进程秒退、**exit code 0**、`~/Library/Logs/DSH Desktop/harness.log`
+完全不再追加（最后一条停在安装前的 19:22），`log show` 只看到 launchd/runningboard 的 `termination reported (0,0,0)`。
+
+看起来像"装了个工作台把 Desktop 搞崩了"，但按顺序查下来不是：
+
+| 排除项 | 做法 | 结果 |
+| --- | --- | --- |
+| 我的包坏了 | 从 `dsh.profile.bundles` 与 `dependencies` **同时摘掉** `@xyb-community/cml-workbench`，再启一次 | **一样秒退** ⇒ 与我的包无关 |
+| Harness 目录坏了 | `DSH_HOME=/tmp/fresh-dsh-home` 起一次 | **一样秒退** ⇒ 与 profile/Harness 内容无关 |
+| 我自己的 CLI harness 占着锁 | `pkill -f "bin.js web"` 后再启 | 仍秒退（**注意：这一条确实会影响启动，但不是本次主因**） |
+| 日志能告诉我们原因 | `harness.log` 有没有新行 | **一行都没有** ⇒ 挂在写日志之前，即 Electron 外壳阶段，还没走到插件加载 |
+
+**判归属的正确做法**：摘掉自己的包 → 重启 → 还退就是宿主/环境问题，不是你的包装错了。
+**不要**因为「我装完它就起不来了」的时间相邻就认领这个锅；也不要反过来在宿主确实坏掉时硬说"我的包装好了"。
+
+**本轮结论**：CML 工作台的**服务端与界面在真实宿主里已被验证可用**——用 app 自带 node + `DSH_HOME` 指向 Desktop 的 Harness、
+profile 用 `web`，`dsh web` 起在同一份配置上：`/api/cml-workbench/health` 200（版本 0.1.0）、`/ui/` 200、
+11 个一级页在**带宿主鉴权的真实会话**里逐个渲染出 h1、**0 pageerror、0 失败请求**。
+**未验证**：Desktop GUI 窗口内的左栏入口点击与切换器条目——因为该 GUI 在本机当前无法保持运行（与本次安装无关，见上表）。
+这一条按"未验证"如实记录，不写成通过。
