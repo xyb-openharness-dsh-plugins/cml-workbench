@@ -14,7 +14,7 @@
 | 阶段 | 判据（可验证） | 状态 | 证据 |
 | --- | --- | --- | --- |
 | M0 骨架 | `npm run check` staticPass=true；9 件文档在位；cordis.patch.yml 有 config.root | ✅ | 2026-10-25 `npm run check` 输出 staticPass:true；docs/ 9 件；patch root 行 |
-| M1 调研SPEC | DIFF-MATRIX 重名率实测数字；三路调研引用带来源+日期；G1 签认留痕 | ⏳ | — |
+| M1 调研SPEC | DIFF-MATRIX 重名率实测数字；三路调研引用带来源+日期；G1 签认留痕 | 🔧 待 G1 签认 | 重名率 **45.8%**（research/family-comparison-cml.md）；医学 10 主题 A/C 级核数（research/medical-cml-10-topics.md）；用户线 0 访谈声明 + 51 条分层（research/user-cml-narratives.md）；SPEC §医学约束 9 条；INTERACTION-DESIGN S1–S9 已铺行 |
 | M2 原型 | prototypes/v0.2 四件套；32 折叠卡；X1–X4 走查计数；独立评审 P0=0；README ≥4 实渲截图；G2 签认 | ⏳ | — |
 | M3 数据模型 | schema/0001_initial.sql；freeze-contract sha256；判读列断言用例过；G3 签认 | ⏳ | — |
 | M4 临床库 | fetch-cml-trials 脚本；research/cml 四件套；manifest=jsonl=sqlite；FAILED 如实 | ⏳ | — |
