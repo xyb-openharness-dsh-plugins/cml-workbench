@@ -1042,9 +1042,49 @@
     h += '<div class="tabs" role="tablist">' + tabs.map(function (tb) {
       return '<button type="button" class="tab" role="tab" aria-selected="' + (state.molTab === tb[0]) + '" data-act="mol-tab" data-v="' + tb[0] + '">' + esc(tb[1]) + '</button>';
     }).join('') + '</div>';
-    if (state.molTab === 'lab') return h + molLabBody();
+    if (state.molTab === 'lab') return h + molLabBody() + molFormBody();
     if (state.molTab === 'cards') return h + molCardsBody();
     return h + molTrendBody();
+  }
+
+  /* 复查记录（二级：录入 / 更正）——P1-5（第四轮评审）：这段表单原先只在「趋势与词表」tab 里渲染，
+     而 CML-LAB 子页的 tab 名与卡片标题都写着「二级：录入 / 更正」，点进去却找不到输入框。
+     抽成共享函数，两个 tab 都渲染同一份表单（DOM id 唯一，不会重复）。 */
+  function molFormBody() {
+    var h = '';
+    /* 复查记录（二级：录入 / 更正）——P0-5：保存真的写入本机内存态并让趋势图新增点 */
+    h += '<section class="card" id="molFormCard" style="margin-top:12px"><div class="card-head"><h3>复查记录（二级：录入 / 更正）</h3>' +
+      badge('显式编辑 ≤1/页') + badge('记录者：' + recorderDefault()) + '</div>' +
+      '<p class="muted mem-notice">' + MEM_NOTICE + '：保存后趋势图会新增 1 个点、分子记录 +1；刷新即回到演示数据。</p>';
+    var w = lastWrite('mol');
+    if (w && w.profile === state.profile) h += '<p class="ok" id="molWriteMsg">' + esc(w.text) + '</p>';
+    if (state.molDraft) {
+      h += '<p class="err" id="molDraftMsg">草稿已保留（未提交）：' + esc(state.molDraft.d + ' ' + state.molDraft.v + ' ' + state.molDraft.unit) + '</p>';
+    }
+    var md = draft().mol || state.molDraft || null;
+    h += '<div class="grid">' +
+      '<div><label class="field-label" for="f-d">日期</label><input id="f-d" type="text" value="' + esc(md ? md.d : TODAY) + '"></div>' +
+      '<div><label class="field-label" for="f-v">BCR::ABL1（IS%）</label><input id="f-v" inputmode="decimal" type="text" value="' + esc(md ? md.v : '') + '"></div>' +
+      '<div><label class="field-label" for="f-lab">实验室 lab</label><input id="f-lab" type="text" value="' + esc(md ? md.lab : '') + '"></div>' +
+      '<div><label class="field-label" for="f-std">IS 标化 is_std（1=是 / 0=否）</label><input id="f-std" inputmode="decimal" type="text" value="' + esc(md ? md.is_std : '1') + '"></div>' +
+      '<div><label class="field-label" for="f-sens">灵敏度 sens</label><input id="f-sens" type="text" value="' + esc(md ? md.sens : 'MR4.5') + '"></div>' +
+      '<div><label class="field-label" for="f-unit">单位 unit</label><input id="f-unit" type="text" value="' + esc(md ? md.unit : 'IS%') + '"></div>' +
+      '</div>' +
+      '<div class="row"><button type="button" class="btn" data-act="mol-save">保存（写入本机内存态）</button>' +
+      '<button type="button" class="btn" data-act="mol-correct">改这一条（更正，不删除）</button>' +
+      '<button type="button" class="btn btn-sm" data-act="mol-reject">模拟候选被拒收</button></div>' +
+      '<p class="muted">删除 = 更正：界面只出现「改这一条 / 更正」，历史版本同链可回溯。</p>';
+    var extraPts = (ex().pcr || []);
+    h += '<h4 class="h3">本机新增的复查记录（' + extraPts.length + ' 条，内存态）</h4>';
+    if (!extraPts.length) h += '<p class="empty">还没有本机新增记录；保存后这里会列出，并同步进趋势图与复诊资料包。</p>';
+    else h += '<ul class="timeline">' + extraPts.map(function (x, i) {
+      return '<li><span class="t-date">' + esc(x.d) + '</span><div>' + esc(num(x.v, 3) + ' ' + (x.unit || 'IS%') +
+        ' · ' + (x.lab || '实验室未记录') + ' · IS 标化 ' + (x.is_std === 1 ? '是' : '否')) + ' ' + recBadge(x.recorder) +
+        ' <span class="src">来源：' + esc(x.src || ('本机录入 · ' + MEM_NOTICE)) + '</span> ' +
+        '<button type="button" class="btn btn-sm" data-act="mol-local-del" data-id="' + i + '">撤回这一条（本机）</button></div></li>';
+    }).join('') + '</ul>';
+    h += '</section>';
+    return h;
   }
 
   /* 分子线 · 复查记录 CML-LAB（二级页，UI-DESIGN:37-39 / HVT-06） */
@@ -1184,38 +1224,7 @@
           ['MR5', '5 log 深度缓解', 'BCR::ABL1 IS ≤0.001%（需实验室支持）', 'GL-CN-2025']]) +
       '<p class="note">词表只给词义与来源版本，不做「是否达到」的判读。</p></section>';
 
-    /* 复查记录（二级：录入 / 更正）——P0-5：保存真的写入本机内存态并让趋势图新增点 */
-    h += '<section class="card" id="molFormCard" style="margin-top:12px"><div class="card-head"><h3>复查记录（二级：录入 / 更正）</h3>' +
-      badge('显式编辑 ≤1/页') + badge('记录者：' + recorderDefault()) + '</div>' +
-      '<p class="muted mem-notice">' + MEM_NOTICE + '：保存后趋势图会新增 1 个点、分子记录 +1；刷新即回到演示数据。</p>';
-    var w = lastWrite('mol');
-    if (w && w.profile === state.profile) h += '<p class="ok" id="molWriteMsg">' + esc(w.text) + '</p>';
-    if (state.molDraft) {
-      h += '<p class="err" id="molDraftMsg">草稿已保留（未提交）：' + esc(state.molDraft.d + ' ' + state.molDraft.v + ' ' + state.molDraft.unit) + '</p>';
-    }
-    var md = draft().mol || state.molDraft || null;
-    h += '<div class="grid">' +
-      '<div><label class="field-label" for="f-d">日期</label><input id="f-d" type="text" value="' + esc(md ? md.d : TODAY) + '"></div>' +
-      '<div><label class="field-label" for="f-v">BCR::ABL1（IS%）</label><input id="f-v" inputmode="decimal" type="text" value="' + esc(md ? md.v : '') + '"></div>' +
-      '<div><label class="field-label" for="f-lab">实验室 lab</label><input id="f-lab" type="text" value="' + esc(md ? md.lab : '') + '"></div>' +
-      '<div><label class="field-label" for="f-std">IS 标化 is_std（1=是 / 0=否）</label><input id="f-std" inputmode="decimal" type="text" value="' + esc(md ? md.is_std : '1') + '"></div>' +
-      '<div><label class="field-label" for="f-sens">灵敏度 sens</label><input id="f-sens" type="text" value="' + esc(md ? md.sens : 'MR4.5') + '"></div>' +
-      '<div><label class="field-label" for="f-unit">单位 unit</label><input id="f-unit" type="text" value="' + esc(md ? md.unit : 'IS%') + '"></div>' +
-      '</div>' +
-      '<div class="row"><button type="button" class="btn" data-act="mol-save">保存（写入本机内存态）</button>' +
-      '<button type="button" class="btn" data-act="mol-correct">改这一条（更正，不删除）</button>' +
-      '<button type="button" class="btn btn-sm" data-act="mol-reject">模拟候选被拒收</button></div>' +
-      '<p class="muted">删除 = 更正：界面只出现「改这一条 / 更正」，历史版本同链可回溯。</p>';
-    var extraPts = (ex().pcr || []);
-    h += '<h4 class="h3">本机新增的复查记录（' + extraPts.length + ' 条，内存态）</h4>';
-    if (!extraPts.length) h += '<p class="empty">还没有本机新增记录；保存后这里会列出，并同步进趋势图与复诊资料包。</p>';
-    else h += '<ul class="timeline">' + extraPts.map(function (x, i) {
-      return '<li><span class="t-date">' + esc(x.d) + '</span><div>' + esc(num(x.v, 3) + ' ' + (x.unit || 'IS%') +
-        ' · ' + (x.lab || '实验室未记录') + ' · IS 标化 ' + (x.is_std === 1 ? '是' : '否')) + ' ' + recBadge(x.recorder) +
-        ' <span class="src">来源：' + esc(x.src || ('本机录入 · ' + MEM_NOTICE)) + '</span> ' +
-        '<button type="button" class="btn btn-sm" data-act="mol-local-del" data-id="' + i + '">撤回这一条（本机）</button></div></li>';
-    }).join('') + '</ul>';
-    h += '</section>';
+    h += molFormBody();
 
     /* 治疗路径折叠卡（docs/32 号硬结构） */
     var ph = pathwayOf();
@@ -1703,7 +1712,18 @@
       '<p class="muted">候选被拒收即零副作用：不写库、不留半条记录，草稿保留。</p>' +
       '<p class="muted" id="docsAcceptedLine">已接受：' + esc(cands.filter(function (c) { return c.status === '已接受'; }).map(function (c) { return c.id; }).join('、') || '无') +
       '（共 ' + acceptedN + ' 条，本机内存态）</p>' +
-      '<p class="muted">接受后本页状态列与计数立刻变；记录者：' + esc(recorderDefault()) + '。</p></section>';
+      '<p class="muted">接受后本页状态列与计数立刻变；记录者：' + esc(recorderDefault()) + '。</p>' +
+      /* P1-4（第四轮评审）：更正写进了 ex().docVersions，但页面从不渲染它 → 用户点完更正看不到新值，
+         产物不可观察（第三轮 P1-1 同类问题在这条路径复发）。版本链必须可见：原值、新值、时间、记录者、来源。 */
+      (function () {
+        var vs = (ex().docVersions || []).filter(function (x) { return true; });
+        var head = '<h4 class="sub">更正记录（版本链 · 原行保留不覆盖）' + (vs.length ? ' · ' + vs.length + ' 条' : '') + '</h4>';
+        if (!vs.length) return head + '<p class="muted">还没有更正。点任一行「更正」后，这里会按时间列出原值 → 新值（原值不会被覆盖）。</p>';
+        return head + dataTable(['候选号', '原值', '更正为', '日期', '记录者', '来源'], vs.map(function (x) {
+          return [esc(x.id), esc(x.from || '（空）'), '<strong>' + esc(x.to) + '</strong>', esc(x.at),
+            esc(x.recorder || '未记录'), '<span class="muted">' + esc(x.src) + '</span>'];
+        }));
+      })() + '</section>';
 
     h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>本页 AI 协助</h3></div>' +
       '<div class="row">' + aiButton('docs', '列字段候选供核对') + '</div>' +
@@ -1890,6 +1910,8 @@
 
     /* ---- 指标选择窗口（≤4 多选；按类别分组；独立滚动） ---- */
     var picker = '<div class="muted">已选 <strong id="oneCount">' + sel.length + '</strong>/4（最多同时看 4 条线，超过会让图读不清）</div>' +
+      /* P1-2：拒选提示放在 picker 内部（侧栏收起也能看到） */
+      '<p class="warn-line" id="onePickHint" hidden></p>' +
       '<div class="metric-list" id="oneList">' + catOrder().filter(function (c) {
         return ms.some(function (m) { return m.cat === c.cat; });
       }).map(function (c) {
@@ -2113,7 +2135,11 @@
     var a = matchOf(state.profile);
     if (!a) return '<p class="empty">本档案还没有生成过比对结果。</p>';
     var h = '<div class="card-head"><h3>逐条比对（三档）</h3>' +
-      badge('规则集 ' + a.ruleSetVersion) + badge('评估生成 ' + a.generatedAt) + '</div>';
+      badge('档案 rev ' + a.profileRevision) + badge('规则集 ' + a.ruleSetVersion) +
+      badge('评估生成 ' + a.generatedAt) + '</div>' +
+      /* P1-3：§4.5 要求"档案 version + 规则集版本 + 逐条判定"三元同在，缺档案 rev 就无法回答
+         "这份评估对应哪一版档案、档案改了以后它是否过期"。 */
+      '<p class="muted">档案 rev 与规则集版本一并记录：档案内容改过后，这份评估应视为过期并重新评估（本页保留旧结论仅作对照）。</p>';
     h += '<p class="sum-line">已满足 <strong>' + a.done + '</strong> 项 · 可能冲突 <strong>' + a.conflict +
       '</strong> 项 · 无法判定 <strong>' + a.undetermined + '</strong> 项 · 待确认规则 <strong>' +
       a.pending.length + '</strong> 项<span class="muted">（汇总只计数，不给匹配度）</span></p>';
@@ -2436,8 +2462,17 @@
       var i = sel.indexOf(v);
       if (i >= 0) sel.splice(i, 1);
       else if (sel.length < 4) sel.push(v);
-      else { var hh = $('aiHint'); if (hh) hh.textContent = '最多同时看 4 条线：先去一条再选新的。'; return; }
+      else {
+        /* P1-2（第四轮评审）：原来只写 #aiHint，而它在会话侧栏里——侧栏收起时 rect=0×0，用户完全看不到反馈。
+           16 号 R7 要求"第 5 个不可选或有明确提示"，所以提示必须落在 **picker 自己内部**（用户此刻正在看的地方），
+           侧栏只作为附带。 */
+        var hh = $('aiHint'); if (hh) hh.textContent = '最多同时看 4 条线：先去一条再选新的。';
+        var hint = $('onePickHint');
+        if (hint) { hint.textContent = '最多同时看 4 条线：先去一条再选新的。'; hint.hidden = false; }
+        return;
+      }
       state.oneSel = sel;
+      var h2 = $('onePickHint'); if (h2) { h2.textContent = ''; h2.hidden = true; }
       repaintChartPanel();   /* R10/16 号：筛选只重绘面板，不整页重渲染 */
       return;
     }
@@ -2548,6 +2583,14 @@
         lines.push('· ' + String(r[5] || '').replace(/^医生原话：「|」$/g, '') +
                    '（来源：' + (r[6] || '未记录') + (r[7] ? ' · 文件 ' + r[7] : '') + '）');
       });
+      /* P1-11（第四轮评审）：导出件是用户会拿走的东西，脱离页面语境。
+         「可以谈停药」这句是**医生原话引用**，不是工具给的建议，但导出后页面上的免责说明就没了。
+         所以导出件必须自带尾注：来源 + 不给结论 + 决策归医生。 */
+      lines.push('', '【说明】',
+        '· 本清单只照抄报告字段与门诊原话，**不给任何结论**，也不判断是否满足停药条件。',
+        '· 引用的医生原话逐条标了来源文件；原话是否适用请与你的主治医生核对。',
+        '· 是否具备停药条件、何时停药，必须由血液科医生依据完整报告判断，本清单不能替代。',
+        '· 生成于 ' + TODAY + ' · 档案 ' + state.profile + ' · ' + MEM_NOTICE + '。');
       state.tfrOut = lines.join('\n');
       state.lastWrite = { page: 'tfr', profile: state.profile, text: '已生成核对清单：' + (tf.must || []).length + ' 条必备 + ' + (tf.min || []).length + ' 条最低 + ' + tfrQuotes.length + ' 条门诊原话' };
       render(); return;
