@@ -42,6 +42,31 @@ Agent 是否运行在目标 Desktop 内：...
 附官方规范第 8 节每条适用项的责任、证据与结果，不适用写理由。只跑静态不能把 ACC-04 以后勾通过。
 限制/失败/需要用户完成的重启步骤：...
 
+## M2 增补轮新增能力验收（2026-10-25 · 用户 m01086 三项需求）
+
+| ID | 操作与预期 | 结果/证据 | 状态 |
+| --- | --- | --- | --- |
+| ACC-M01 | 分子线「指标卡」tab：7 张卡按 4 类分组，类别标题＝「类别名 + 项数 + 有记录项数」；类别顺序与颜色来自唯一 `CATEGORY_ORDER`，页面无第二处硬编码分组 | Playwright 读 `.cat-head` 文本；grep `CATEGORY_ORDER` 只出现在 demo 构建器与消费端 | ✅ 实测（原prototype 阶段） |
+| ACC-M02 | 点整卡翻 180°：翻转前后卡片 rect 完全一致、内层 transform 含 `matrix3d`、过渡 480ms `cubic-bezier(.2,.7,.2,1)`；单卡翻转时其余卡 `aria-pressed` 仍为 false；再点回正面且页面高度不变 | 实测 rect 366×276 → 366×276、位移 0.0；`getComputedStyle` 读到 transition/transform；`pressed:['true','false',…]` | ✅ 实测 |
+| ACC-M03 | 三档宽度 1440/1080/860 列数 2/2/1、卡高恒 276px、无横向溢出 | `getComputedStyle(.mcard-grid).gridTemplateColumns` 分支数 + `getBoundingClientRect().height` | ✅ 实测 |
+| ACC-M04 | 无记录写「还没有记录」不写 0；单点写「暂无可比较的前次记录」；页面 0 处「总分/综合评分/健康指数」 | 渲染态文案扫描 | ✅ 实测 |
+| ACC-M05 | 一图秀：指标选择窗口按类别分组、独立滚动、最多 4 条；第 5 次点击被拒并提示；`<details>` 默认收起可展开 | 点击级断言（`+hgb/+plt` → 4，`+anc/+cost` → `aria-pressed=false` + 提示文案） | ✅ 实测 |
+| ACC-M06 | 一图秀 R3：关掉治疗条后曲线 `d` 属性逐条不变 | 前后 `.series-line` 的 `d` 字符串比对（True） | ✅ 实测 |
+| ACC-M07 | 一图秀 R1：A、B 两档「不可比提示」在图上真实可见；不可比处断开不跨组连线 | A 档案因外院 `is_std=0` 记录命中；B 档案同样命中 | ✅ 实测 |
+| ACC-M08 | 一图秀只重绘面板：切换指标/时间窗/图层后 `#chart-panel` 节点同一性保持 | `window.__stamp === document.querySelector('#chart-panel')`（True） | ✅ 实测 |
+| ACC-M09 | 一图秀 R10：390px 下 `body.scrollWidth === innerWidth === 390`，横滚只在 `.chart-wrap` | `{sw:390, iw:390, cw:568}` | ✅ 实测 |
+| ACC-M10 | 一图秀 R12：`svg role="img"` + `aria-label`；每点有 `<title>` | DOM 断言（26 个 title） | ✅ 实测 |
+| ACC-M11 | 临床研究：入组档案 18 字段/7 组全部来自既有病情数据；完整度 `x/y`；缺失字段被列出 | A 14/18、B 13/18；缺失清单渲染 | ✅ 实测 |
+| ACC-M12 | 临床研究铁律：缺失字段**永远**流向「无法判定」，绝不流向「已满足」 | 读 `evalRule` 的 `tier(v)` 缺失分支 + A/B 各有无法判定项（A 3 项、B 4 项） | ✅ 实测 |
+| ACC-M13 | 临床研究表达约束（§4.4）：全页 0 处「匹配度/高匹配/推荐/按匹配度排序」；无绿红排名；汇总行只计数 | 渲染态文案扫描（banned=[]）+ 页脚文案核对 | ✅ 实测 |
+| ACC-M14 | 渠道覆盖如实：未就绪渠道显示「未参与」而非「没有试验」；4 条试验逐条标【演示虚构】 | 页面文案 + 数据层 `channel:'demo'` | ✅ 实测（数据为演示虚构，M4 替换） |
+| ACC-M15 | 切档案不串档：`tfrOut` / 生育问题清单按档案隔离（`fertQByProfile`） | 切换后产物清空/分桶读取 | ✅ 实测 |
+| ACC-M16 | 打印：加三项能力后 Chrome 出 PDF 仍为多页（不得退回 1 页） | 逐路由实测：**A/mol 9 页 922,333B、B/mol 8 页 902,261B**（与第三轮 9/8 页一致，字节略增因新增外院 pcr 记录）；dash 3 页、trial 4 页、onechart 1 页（单页正常） | ✅ 实测 |
+| ACC-M17 | `npm run check` 一条命令覆盖全部本地闸口（含探针覆盖断言） | 实测 5 个 pass + 0 fail | ✅ 实测 |
+
+> 说明：ACC-M16 已自测。关键细节：**页数要按路由看，不能只看默认路由**——`#dash` 只出 3 页，第三轮记录的 9/8 页对应的是 `#mol`（折叠卡都在分子线治疗历程里）。
+> 若只量 `#dash` 就会误判"打印退化了"。这条本身是个可复现的踩坑点，已记入 DEV-REQUIREMENTS §七。
+
 ## 设计与混合数据补充
 
 | ID | 操作与预期 | 结果/证据 | 状态 |
