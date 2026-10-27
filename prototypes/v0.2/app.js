@@ -2360,6 +2360,31 @@
   /* ================= 交互（仅浏览器） ================= */
   function $(id) { return document.getElementById(id); }
 
+  /* 是否跑在 DSH 宿主里（原生会话由宿主提供；独立打开时没有会话面板） */
+  function hosted() {
+    try { return Boolean(window.parent) && window.parent !== window; } catch (e) { return false; }
+  }
+
+  /* 页面内反馈：原先把提示写进右侧会话栏的 #aiHint，会话栏已去掉，改成页面底部短提示 */
+  var flashTimer = null;
+  function flash(text) {
+    var el = $('aiHint');
+    if (el) { el.textContent = text; return; }
+    var t = $('pageFlash');
+    if (!t) {
+      t = document.createElement('div');
+      t.id = 'pageFlash';
+      t.className = 'page-flash';
+      t.setAttribute('role', 'status');
+      t.setAttribute('aria-live', 'polite');
+      document.body.appendChild(t);
+    }
+    t.textContent = text;
+    t.classList.add('on');
+    if (flashTimer) clearTimeout(flashTimer);
+    flashTimer = setTimeout(function () { t.classList.remove('on'); }, 3600);
+  }
+
   function setPanelWidth(pct, persist) {
     pct = Math.max(25, Math.min(45, pct));
     document.documentElement.style.setProperty('--panel-w', pct + '%');
@@ -2383,27 +2408,14 @@
     draft.prompt = prompt;
     state.lastDraft = draft;
     if (typeof CustomEvent === 'function') document.dispatchEvent(new CustomEvent('cml:agent-draft', { detail: draft }));
-    var box = $('aiPrompt');
-    if (box) box.value = prompt;
-    var hint = $('aiHint');
-    if (hint) hint.textContent = '已填入本页关键信息（未发送）：可以先改，再自己决定发不发。';
+    flash(hosted()
+      ? '已把本页关键信息带进 AI 对话草稿（未发送）：可以在右侧会话里改完再发。'
+      : '现在没有会话面板：这条上下文只在 DSH 宿主里能带进 AI 对话。');
   }
-  /* 拉起 AI 对话栏（隐藏 ≠ 结束会话）：页内面板 + 宿主外壳一起拉 */
+  /* 会话是宿主原生面板：页面只请求宿主把它叫到前台，不在页面里另造一个聊天窗 */
   function openAgentPane() {
-    state.panelCollapsed = false;
-    var s2 = $('session'); if (s2) s2.hidden = false;
-    var sp = $('splitter'); if (sp) sp.hidden = false;
-    var btn = $('panelToggle');
-    if (btn) {
-      btn.textContent = '收起 AI 对话';
-      btn.setAttribute('aria-expanded', 'true');
-      btn.setAttribute('aria-label', 'AI 对话：已展开');
-    }
-    /* 宿主形态：告诉外壳「用户要把原生 AI 对话栏拉起来」。
-       外壳负责真正的开合；页面自己那个会话区只是本地原型态。 */
-    if (window.parent !== window) {
-      try { window.parent.postMessage({ type: 'cml:agent-open' }, window.location.origin); } catch (e) { /* 外壳收不到就只开本页面板 */ }
-    }
+    if (!hosted()) { flash('独立打开时没有会话面板：在 DSH Desktop 里打开工作台即可对话。'); return; }
+    try { window.parent.postMessage({ type: 'cml:agent-open' }, window.location.origin); } catch (e) { /* 外壳收不到就只提示 */ }
   }
 
   function dispatchDraft(page) {
@@ -2414,12 +2426,9 @@
       ev = new CustomEvent('cml:agent-draft', { detail: draft });
       document.dispatchEvent(ev);
     }
-    var box = $('aiPrompt');
-    if (box) box.value = draft.prompt;                 /* 只填入，不自动发送 */
-    var log = $('agentLog');
-    if (log) log.textContent = JSON.stringify({ page: draft.context.page, profile: draft.context.profile, range: draft.context.range, filter: draft.context.filter, records: draft.context.records.length }, null, 1);
-    var hint = $('aiHint');
-    if (hint) hint.textContent = '已填入提示词（未发送）。事件 cml:agent-draft 已派发。';
+    flash(hosted()
+      ? '已把本页提示词填进 AI 对话草稿（未发送）。'
+      : '现在没有会话面板：这条提示词只在 DSH 宿主里能填进 AI 对话。');
   }
 
   /* P0-6：导出＝事实区 / 看法区 / 问题清单三块；计数与页面显示来自同一个 filterPrivate 调用 */
@@ -2471,12 +2480,6 @@
     });
     var di = $('dirIndicator');
     if (di) di.textContent = '资料目录：' + DATA_DIR + ' · 已挂载';
-    var st = $('sessionState');
-    if (st) st.textContent = '状态：未连接 · 档案 ' + state.profile + ' · 隐藏面板不结束会话、不清空草稿';
-    var box = $('aiPrompt');
-    if (box && state.lastDraft && !box.value) box.value = state.lastDraft.prompt;
-    var el2 = $('exitLog');
-    if (el2) el2.textContent = JSON.stringify({ export: lastFilter('export'), ai: lastFilter('ai'), summary: lastFilter('summary') }, null, 1);
     /* P0-1：打印媒体下新建的折叠卡也要展开（否则打印丢内容） */
     if (printMediaMatches()) setPrintOpen(true);
   }
@@ -2547,9 +2550,7 @@
       state.fertQMsg = '';
       state.docsFail = false;
       state.lastDraft = null;
-      var ap = $('aiPrompt'); if (ap) ap.value = '';
-      var al = $('agentLog'); if (al) al.textContent = '（尚未触发）';
-      var ah = $('aiHint'); if (ah) ah.textContent = '已切换档案：未提交草稿已清空。';
+      flash('已切换档案：未提交草稿已清空。');
       render(); return;
     }
     if (act === 'settings') { var m = $('settingsModal'); if (m) m.hidden = false; return; }
@@ -2557,20 +2558,9 @@
     if (act === 'cfg-path-save') { var g = $('cfgPathMsg'); if (g) g.textContent = '已保存（原型不写库）。'; return; }
     if (act === 'cfg-path-cancel') { var g2 = $('cfgPathMsg'); if (g2) g2.textContent = '已取消，未写入。'; return; }
 
-    if (act === 'panel-toggle') {
-      /* 脚手架标准（docs/20-AGENT-PANE-DESIGN §3.1）：顶栏是「AI 对话」开关，
-         隐藏 ≠ 结束会话；宿主形态下同时把意图转给外壳的真面板（public/bridge.js）。 */
-      var s = $('session');
-      if (!s) return;
-      state.panelCollapsed = !state.panelCollapsed;
-      s.hidden = state.panelCollapsed;
-      var sp = $('splitter'); if (sp) sp.hidden = state.panelCollapsed;
-      el.textContent = state.panelCollapsed ? '打开 AI 对话' : '收起 AI 对话';
-      el.setAttribute('aria-expanded', String(!state.panelCollapsed));
-      el.setAttribute('aria-label', 'AI 对话：' + (state.panelCollapsed ? '已收起' : '已展开'));
-      if (window.parent !== window) {
-        try { window.parent.postMessage({ type: 'cml:agent-toggle' }, window.location.origin); } catch (e) { /* 外壳收不到就只动本页面板 */ }
-      }
+    if (act === 'agent-open' || act === 'panel-toggle') {
+      /* 顶栏只保留一个入口：请宿主把原生会话叫到前台。页面不再建聊天窗、也不再自管开合状态。 */
+      openAgentPane();
       return;
     }
 
@@ -2581,11 +2571,9 @@
       openAgentPane();
       return;
     }
-    if (act === 'ai-send') { var h2 = $('aiHint'); if (h2) h2.textContent = '原型不发起真实请求（提示词已在输入框，需你手动发送）。'; return; }
-    if (act === 'ai-clear') { var b = $('aiPrompt'); if (b) b.value = ''; return; }
 
     if (act === 'med-tab') { state.medTab = v; goto('med', v); return; }
-    if (act === 'med-heat') { var hh = $('aiHint'); if (hh) hh.textContent = '热力图视图：' + (v === 'month' ? '月' : '年') + '（原型按数据逐月渲染）。'; return; }
+    if (act === 'med-heat') { flash('热力图视图：' + (v === 'month' ? '月' : '年') + '（原型按数据逐月渲染）。'); return; }
     if (act === 'today-taken') {
       /* S2 入口逐字「今天吃了吗」：停药期无每日服药 → 去打卡页说明 */
       if (currentDrugKey() === 'none') { goto('med', 'checkin'); return; }
@@ -2613,7 +2601,7 @@
         /* P1-2（第四轮评审）：原来只写 #aiHint，而它在会话侧栏里——侧栏收起时 rect=0×0，用户完全看不到反馈。
            16 号 R7 要求"第 5 个不可选或有明确提示"，所以提示必须落在 **picker 自己内部**（用户此刻正在看的地方），
            侧栏只作为附带。 */
-        var hh = $('aiHint'); if (hh) hh.textContent = '最多同时看 4 条线：先去一条再选新的。';
+        flash('最多同时看 4 条线：先去一条再选新的。');
         var hint = $('onePickHint');
         if (hint) { hint.textContent = '最多同时看 4 条线：先去一条再选新的。'; hint.hidden = false; }
         return;
@@ -2702,7 +2690,7 @@
     if (act === 'fert-ask') {
       var ask = $('fertAskList');
       if (ask) { ask.classList.add('ask-hi'); try { ask.scrollIntoView({ block: 'center' }); } catch (e2) { /* ignore */ } }
-      var hh0 = $('aiHint'); if (hh0) hh0.textContent = '已打开「我要问的」问题清单（本页不提供 AI 生成）。';
+      flash('已打开「我要问的」问题清单（本页不提供 AI 生成）。');
       return;
     }
 
@@ -2761,7 +2749,7 @@
     }
     if (act === 'prep-export') { state.prepOut = exportBundle(); render(); return; }
     if (act === 'prep-summary') { state.prepOut = buildSummary(); render(); return; }
-    if (act === 'docs-pick') { var dp = $('aiHint'); if (dp) dp.textContent = '原型不读本机文件；真实版本走 MinerU 六部件。'; return; }
+    if (act === 'docs-pick') { flash('原型不读本机文件；真实版本走 MinerU 六部件。'); return; }
     if (act === 'docs-fail') { state.docsFail = !state.docsFail; render(); return; }
     if (act === 'docs-accept' || act === 'docs-correct') {
       var id = el.getAttribute('data-id');

@@ -223,7 +223,6 @@ svg.chart .legend{fill:var(--muted)}
 .ok{border:1px solid var(--accent);border-radius:var(--radius);padding:8px;font-size:12.5px;color:var(--fg);background:#2f6f6612}
 .mem-notice{color:var(--warn)}
 .ask-hi{background:#2f6f6612;border-radius:var(--radius);padding:8px 8px 8px 24px;outline:1px solid var(--accent)}
-.subj-note{font-size:12.5px;color:var(--muted);flex:1 1 100%}
 
 /* ---------- 血常规密测轨道（CML-LAB） ---------- */
 .track{display:flex;flex-wrap:wrap;gap:4px;margin:8px 0}
@@ -417,7 +416,17 @@ svg .ax { font-size: 12.5px; fill: var(--muted); }
   font-weight:600;cursor:pointer;white-space:nowrap;
 }
 .btn-discuss:hover{background:var(--mint,#e2f2ea)}
-.btn-ai{border-color:var(--mint-ink,#22664e);color:var(--mint-ink,#22664e);background:var(--mint,#e2f2ea)}
+.btn-ai{border-color:var(--mint-ink,#22664e);color:#fff;background:var(--mint-ink,#22664e)}
+.btn-ai:hover,.btn-ai:focus-visible{background:#1b5541;border-color:#1b5541;color:#fff}
+/* 页面内短提示（会话栏去掉后，原 #aiHint 的反馈改在这里出现） */
+.page-flash{
+  position:fixed;left:50%;bottom:28px;transform:translate(-50%,12px);
+  max-width:min(80vw,560px);padding:8px 14px;border-radius:999px;
+  background:#1f2d27;color:#fff;font-size:12.5px;line-height:1.5;
+  box-shadow:0 8px 24px rgba(0,0,0,.18);opacity:0;pointer-events:none;
+  transition:opacity .18s ease,transform .18s ease;z-index:60;
+}
+.page-flash.on{opacity:1;transform:translate(-50%,0)}
 @media (max-width:860px){
   .page-head .head-actions{margin-inline-start:0;width:100%}
   .btn-discuss{width:100%;justify-content:center}
