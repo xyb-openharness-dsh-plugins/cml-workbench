@@ -1,11 +1,11 @@
-/* 小粒宝 GranPal · CML 患者工作台 · M2 交互原型（v0.1.0）
+/* 小粒宝 GranPal · CML 患者工作台 · M2 交互原型（v0.1.1）
  * 数据来源：window.DEMO_DATA（prototypes/v0.2/demo-data.js，只读；本文件不修改、不重新生成数据）
  * 规则：无判读列 / 趋势线单色 / 分类值不画曲线 / private 三出口代码级过滤 / 全站字号 12.5-15px
  */
 (function () {
   'use strict';
 
-  var VERSION = 'v0.1.0';
+  var VERSION = 'v0.1.1';
   var BUILD = '2026-10-25';
   var DATA_DIR = '~/GranPal/病历资料';
   var TODAY = '2026-10-13';
@@ -939,6 +939,49 @@
     return state.profile === 'A' ? A : B;
   }
 
+  /* ===== 36 号 §2.6 · 看板状态卡（四件：eyebrow / 锚点派生天数 / 现状行 / 出口按钮排） ===== */
+  function dateOnly(s) {
+    var m = String(s || '').match(/(\d{4})-(\d{2})-(\d{2})/);
+    return m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) : null;
+  }
+  function dayCount(anchor) {
+    var t = dateOnly(TODAY);
+    if (anchor == null || t == null) return null;
+    return Math.floor((t - anchor) / 86400000) + 1;
+  }
+  function primerButton() {
+    return '<button type="button" class="btn" data-primer-open aria-haspopup="dialog" aria-controls="disease-primer" aria-expanded="false" aria-label="疾病概要：定义、医学资料与指南情况、治疗全景、发展趋势">疾病概要：慢性粒细胞白血病是什么？</button>';
+  }
+  function statusCard() {
+    var p = profile();
+    var rx = p.rx || [];
+    var lines = p.lines || [];
+    var anchor = dateOnly(rx.length ? rx[0][0] : (lines[0] && lines[0].detail));
+    var n = dayCount(anchor);
+    var current = lines.length ? lines[lines.length - 1] : null;
+    var currentName = current ? String(current.name || '') : '';
+    var currentDetail = current ? String(current.detail || '') : '';
+    var rhythm = p.rhythm || [];
+    var next = rhythm[0] || null;
+    var state = /密测中/.test(currentName) ? '密测中' : (current && current.done === false ? '进行中' : '未记录');
+    var coreHref = currentDrugKey() === 'none' ? '#tfr' : '#med';
+    var coreLabel = currentDrugKey() === 'none' ? '看 TFR 档案（条件核对）→' : '看服药线（今日打卡）→';
+
+    var h = '<section class="card status-card" aria-labelledby="statusTitle">' +
+      '<p class="status-eyebrow" id="statusTitle">' + (n == null ? '状态卡 · 待初始化' : 'D+' + (n - 1) + ' 状态卡 · 距' + esc(next ? String(next[0]) : '下一阶段')) + '</p>';
+    if (n == null) {
+      h += '<p class="status-day"><b>待初始化</b></p>' +
+        '<p class="status-now">还没有锚点日（首剂 TKI 日期）。三步初始化：① 在「资料导入」录入确诊与首剂日期；② 在「分子线」记一笔复查；③ 回看板核对下次复查。</p>' +
+        '<div class="status-actions"><a class="btn" href="#docs">去三步向导起点（资料导入）→</a>' + primerButton() + '</div></section>';
+      return h;
+    }
+    h += '<p class="status-day"><b>第 ' + n + ' 天</b><span class="status-anchor">锚点：首剂 TKI ' + esc(String(rx[0][0])) + '（D1）</span></p>' +
+      '<p class="status-now">当前阶段：<strong>' + esc(currentName) + '</strong> · ' + esc(state) + ' · 下次：' + esc(next ? String(next[3]) + '（' + String(next[0]) + '）' : '未记录') + '</p>' +
+      '<p class="muted">' + esc(currentDetail) + '</p>' +
+      '<div class="status-actions"><a class="btn" href="' + coreHref + '">' + coreLabel + '</a>' + primerButton() + '</div></section>';
+    return h;
+  }
+
   /* ================= 页面：dash ================= */
   function pageDash() {
     /* 一图秀入口（X1：不允许孤儿页——它必须从看板这条真实使用路径上够得着） */
@@ -954,6 +997,9 @@
       '<p class="muted mem-notice" id="memNotice">' + MEM_NOTICE + '；本机写入只改变当前页面状态。</p>';
 
     h += '<div class="grid">';
+
+    /* 36 号 §2.6：状态卡是疾病概要的触发器，也是看板首卡（骨架卡在先，业务卡在后） */
+    h += statusCard();
 
     /* 档案头 */
     h += '<section class="card"><div class="card-head"><h3>档案</h3>' + badge(p.phase || '') + badge('转录本 ' + (p.transcript || '未记录')) + '</div>' +

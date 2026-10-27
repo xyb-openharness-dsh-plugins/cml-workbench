@@ -3,16 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>小粒宝 GranPal · CML 患者工作台 v0.1.0（M2 原型）</title>
+<title>小粒宝 GranPal · CML 患者工作台 v0.1.1（M2 原型）</title>
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="primer.css">
 </head>
 <body>
 
 <a class="skip" href="#view">跳到主要内容</a>
 
-<!-- 顶栏：版本字面量 v0.1.0 常显；资料目录指示器；设置；AI 对话状态 -->
+<!-- 顶栏：版本字面量 v0.1.1 常显；资料目录指示器；疾病概要「?」；设置；AI 对话状态 -->
 <header class="topbar">
-  <div class="brand">小粒宝 GranPal <span class="ver">v0.1.0</span></div>
+  <div class="brand">小粒宝 GranPal <span class="ver">v0.1.1</span></div>
 
   <nav class="profiles" aria-label="演示档案切换（示例档案 A / B 是两位不同患者；双主体＝每条记录可由本人或家属代记，标注见「记录者」）">
     <button type="button" class="chip" data-act="profile" data-p="A">档案 A · 患者本人视角</button>
@@ -22,6 +23,7 @@
 
   <div class="topbar-right">
     <span class="dir-indicator" id="dirIndicator" title="患者资料目录（本机）">资料目录：~/GranPal/病历资料 · 已挂载</span>
+    <button type="button" class="btn" data-primer-open aria-haspopup="dialog" aria-controls="disease-primer" aria-expanded="false" aria-label="疾病概要：定义、医学资料与指南情况、治疗全景、发展趋势" title="疾病概要：定义 · 指南 · 治疗全景 · 趋势">?</button>
     <button type="button" class="btn" data-act="settings" aria-haspopup="dialog">设置</button>
     <button type="button" class="btn btn-ai" data-act="panel-toggle" id="panelToggle" aria-controls="session" aria-expanded="true" aria-label="AI 对话：已展开">收起 AI 对话</button>
     <span class="conn" id="connState">AI 对话：未连接</span>
@@ -85,9 +87,9 @@
   </aside>
 </div>
 
-<!-- 页脚贴底：flex column + margin-top:auto；版本字面量 v0.1.0 + 构建日 + 数据目录状态 -->
+<!-- 页脚贴底：flex column + margin-top:auto；版本字面量 v0.1.1 + 构建日 + 数据目录状态 -->
 <footer class="footer">
-  <span>小粒宝 GranPal <b class="ver">v0.1.0</b></span>
+  <span>小粒宝 GranPal <b class="ver">v0.1.1</b></span>
   <span>构建日：2026-10-25</span>
   <span>数据目录：~/GranPal/病历资料 · 状态：已挂载（本机）</span>
   <span>示例数据：prototypes/v0.2/demo-data.js（只读）</span>
@@ -147,7 +149,7 @@
         <h3 class="h3">④ 关于与版本</h3>
         <table class="kv">
           <tbody>
-            <tr><th>版本</th><td data-th="版本">v0.1.0</td></tr>
+            <tr><th>版本</th><td data-th="版本">v0.1.1</td></tr>
             <tr><th>构建日</th><td data-th="构建日">2026-10-25</td></tr>
             <tr><th>渠道</th><td data-th="渠道">M2 交互原型（本地 HTML，未装机）</td></tr>
             <tr><th>来源</th><td data-th="来源">docs/UI-DESIGN.md · docs/32-TREATMENT-PATHWAY-FOLDOUT.md · docs/SCENARIOS.md · docs/HVT-REVIEW.md</td></tr>
@@ -160,13 +162,15 @@
   </div>
 </div>
 
+<script src="primer-data.js"></script>
 <script src="demo-data.js"></script>
 <script src="app.js"></script>
+<script src="primer.js"></script>
 </body>
 </html>
 
 <!--
-==================== M2 原型自查清单（GranPal CML · v0.1.0 · 构建日 2026-10-25）====================
+==================== M2 原型自查清单（GranPal CML · v0.1.1 · 构建日 2026-10-25）====================
 检查方式：① Node 载入 demo-data.js + app.js，对 A/B 两档案 × 10 个一级页逐一 renderPage 并正则计数；
 ② 本机 Google Chrome headless（dump-dom 模式）在 1280 / 900 / 700 三档宽度真机渲染，跑 43 + 19 条 DOM 断言；
 ③ grep 源码。下面数字全部来自上述实跑输出，不是估计值。
@@ -239,7 +243,9 @@
      以 `shasum -a 256 prototypes/v0.2/demo-data.js` 与 `scripts/check-demo-data.mjs` 的输出为准，本文件不复制数字；B 档案患者原话为敏感词，界面不渲染、只在带来源 `<q>` 内按原文出现。
 
 8) 其他硬规则实跑结果
-   版本字面量 v0.1.0：顶栏与页脚都在；页脚含构建日 2026-10-25 与数据目录状态「~/GranPal/病历资料 · 已挂载（本机）」。
+   版本字面量 v0.1.1：顶栏与页脚都在；页脚含构建日 2026-10-25 与数据目录状态「~/GranPal/病历资料 · 已挂载（本机）」。
+   疾病概要（36 号 v2）：顶栏「?」（手写 aria-label）与看板状态卡副按钮均在；四段固定 definition → evidence → landscape → trend；
+   链接闸门 `node scripts/check-primer-links.mjs` 全过；探针 `node scripts/probe-disease-primer.mjs` 10/10。
    页脚贴底：短页面（#trial）footer.bottom = 视口高（flex column + margin-top:auto + 面板内部滚动）。
    字号：style.css 只用 12.5px / 13px / 15px；浏览器遍历全部元素 computed font-size，越界 0 个。
    会话区：默认 35%，范围 25%–45%，拖拽/键盘 ←→ 步进 1%/Home/End 到边界，写入 localStorage['granpal.panelWidth']；可收起/重开（原生 hidden）。

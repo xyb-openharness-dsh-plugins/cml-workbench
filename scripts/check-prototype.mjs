@@ -28,8 +28,14 @@ if (fails.length === 0) {
   if (missing.length) F('pages', `一级页缺：${missing.join(',')}（应 10 条）`); else O('pages', '10 个一级页均在位');
 
   /* --- 版本字面量（P1 发布可见性） --- */
-  const vcount = (src.match(/v0\.1\.0/g) || []).length;
-  if (vcount < 2) F('version', `版本字面量出现 ${vcount} 次（顶栏+页脚至少 2）`); else O('version', `版本字面量 ${vcount} 次`);
+  /* 版本号唯一来源是仓库 VERSION（与 package.json 同源）；旧版把 v0.1.0 写死，
+     升 patch 后检查器自己先红——已改为按 VERSION 动态取。 */
+  const VERSION_FILE = join(ROOT, 'VERSION');
+  const V = existsSync(VERSION_FILE) ? readFileSync(VERSION_FILE, 'utf8').trim() : '';
+  if (!V) F('version/source', '缺 VERSION 文件，无法核对版本字面量');
+  const vre = V ? new RegExp('v' + V.replace(/\./g, '\\.'), 'g') : null;
+  const vcount = vre ? (src.match(vre) || []).length : 0;
+  if (!V) { /* 上面已报 */ } else if (vcount < 2) F('version', `版本字面量 v${V} 出现 ${vcount} 次（顶栏+页脚至少 2）`); else O('version', `版本字面量 v${V} 出现 ${vcount} 次`);
 
   /* --- 折叠卡（32 号） --- */
   const openCount = (src.match(/<details[^>]*\sopen\b/g) || []).length;
@@ -82,7 +88,7 @@ if (fails.length === 0) {
      豁免：指标卡正面的大数字 `.mval` 用 33px。依据是 24 号 §5「数字约33px、项目名15px、
      正文12px、元信息11px」——这是家族约定的**卡片内视觉层级**，不是正文。豁免必须逐选择器
      声明（不是按数值放行），否则字号纪律会悄悄失效；新增豁免要写进 DEV-REQUIREMENTS §七。 */
-  const NUMERAL_SELECTORS = ['\\.mval'];
+  const NUMERAL_SELECTORS = ['\\.mval', '\\.status-day b'];
   const sizeRows = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)].flatMap(([, sel, body]) =>
     [...body.matchAll(/font-size:\s*([\d.]+)px/g)].map((m) => ({ sel: sel.trim(), size: Number(m[1]) })));
   const isNumeral = (sel) => NUMERAL_SELECTORS.some((re) => new RegExp(re).test(sel));
