@@ -760,11 +760,10 @@
   }
 
   /* ================= 通用片段 ================= */
-  /* AI 按钮。传 prompt 时走 agent-draft（一键携带预写提示词+病情上下文，只填输入框不自动发送）；
-     不传时走通用 ai 派发。两条路径都不替用户下结论。 */
   /* 「和 AI 讨论」（脚手架标准 docs/20-AGENT-PANE-DESIGN §3.3）：每个一级页一个入口，
-     点它①把**本页关键事实**写进提示词（只陈述、不判定）②拉起 AI 对话栏。
-     **不代发**：只填进输入框，发不发由用户决定（IP10 同款守卫）。 */
+     点它①把**本页关键事实**写进提示词（只陈述、不判定）②请宿主把原生会话叫到前台。
+     **不代发**：只填进宿主草稿，发不发由用户决定（IP10 同款守卫）。
+     页面内没有输入框、没有发送键、没有聊天记录——那三样都由宿主持有。 */
   function discussFacts(page) {
     var p = profile();
     var common = '档案 ' + state.profile + '（' + (p.name || '未记录') + '，' + authorRole() + '）';
@@ -804,19 +803,47 @@
     return '【' + (ROUTE_LABEL[page] || '本页') + ' · 本页关键信息】' + discussFacts(page) + '\n\n' + base + '\n\n' + boundary;
   }
 
-  function discussButton(page) {
-    return '<button type="button" class="btn btn-discuss" data-act="discuss" data-page="' + page +
-      '" aria-label="和 AI 讨论本页内容（拉起 AI 对话栏并携带本页关键信息，不代发）">和 AI 讨论</button>';
+  /* 页面级 AI 入口：每个业务页只在页头放一个（对齐小粉宝/小胆宝的「页头右侧单一动作」）。
+     mode='discuss' → 携带本页事实并请求宿主把原生会话叫到前台（不代发）；
+     其余 → 只派发 cml:agent-draft，由 public/bridge.js 填进宿主草稿。
+     红线页（TFR / 生育）返回空串：正文另有「本页不提供 AI 生成」说明，页头不再出现 AI 按钮。 */
+  function aiButton(page, label, prompt, mode) {
+    if (AI_FORBIDDEN[page]) return '';
+    var txt = label || '整理本页事实';
+    if (mode === 'discuss') {
+      return '<button type="button" class="btn btn-discuss" data-act="discuss" data-page="' + page +
+        '" aria-label="和 AI 讨论本页内容（携带本页事实，不代发）">' + esc(txt) + '</button>';
+    }
+    return '<button type="button" class="btn" data-act="agent-draft" data-page="' + page +
+      '"' + (prompt ? ' data-prompt="' + esc(prompt) + '"' : '') + '>' + esc(txt) + '</button>';
   }
 
-  function aiButton(page, label, prompt) {
-    if (AI_FORBIDDEN[page]) return '';
-    var txt = 'AI 协助（示例）' + (label ? ' · ' + esc(label) : '');
-    if (prompt) {
-      return '<button type="button" class="btn" data-act="agent-draft" data-page="' + page +
-        '" data-prompt="' + esc(prompt) + '">' + txt + '</button>';
-    }
-    return '<button type="button" class="btn" data-act="ai" data-page="' + page + '">' + txt + '</button>';
+  /* 每页页头的唯一 AI 入口。逐页列出（而不是页内散落多颗按钮），
+     静态检查据此核对「覆盖页」，读代码的人也只需看这一处就知道每页有没有 AI。
+     红线页 TFR / 生育刻意不在表里：页面正文写明「本页不提供 AI 生成」。 */
+  var PAGE_AI = {
+    dash: function () { return aiButton('dash', '和 AI 讨论', null, 'discuss'); },
+    mol: function () { return aiButton('mol', '和 AI 讨论', null, 'discuss'); },
+    onechart: function () { return aiButton('onechart', '和 AI 讨论', null, 'discuss'); },
+    med: function () { return aiButton('med', '和 AI 讨论', null, 'discuss'); },
+    ae: function () { return aiButton('ae', '和 AI 讨论', null, 'discuss'); },
+    cost: function () { return aiButton('cost', '和 AI 讨论', null, 'discuss'); },
+    prep: function () { return aiButton('prep', '和 AI 讨论', null, 'discuss'); },
+    docs: function () { return aiButton('docs', '和 AI 讨论', null, 'discuss'); },
+    trial: function () { return aiButton('trial', '和 AI 讨论', null, 'discuss'); }
+  };
+
+  /* 页头统一结构（对齐小粉宝 head() / 小胆宝 pageHead()）：
+     eyebrow（档案口径）→ h1 → 一句话说明 → 右侧唯一 AI 入口。
+     构建号 / 版本号 / 图谱编号这类内部信息不再进业务页头——它们在顶栏版本章、设置弹窗与页脚里。 */
+  function pageHead(title, sub, page, meta) {
+    return '<div class="page-head"><div class="page-head-main">' +
+      '<p class="eyebrow">' + esc(meta || ('档案 ' + state.profile + ' · ' + authorView() + ' · 记录者随条目标注')) + '</p>' +
+      '<h1>' + esc(title) + '</h1>' +
+      (sub ? '<p class="page-sub">' + sub + '</p>' : '') +
+      '</div>' +
+      (page && PAGE_AI[page] ? '<span class="head-actions">' + PAGE_AI[page]() + '</span>' : '') +
+      '</div>';
   }
   function aiForbiddenNote(page) {
     if (!AI_FORBIDDEN[page]) return '';
@@ -991,30 +1018,28 @@
     var ml = p.med_log || {};
     var recent = (ml.recent || []).slice(0, 3);
     var pcrMetric = metricByKey('pcr') || null;
+    var rhythm = p.rhythm || [];
+    var next = rhythm[0] || null;
 
-    var h = '<div class="page-head"><h1>看板</h1>' +
-      badge('档案 ' + state.profile + ' · ' + authorView()) + badge('记录者随条目标注') + badge('构建 ' + BUILD) + badge(VERSION) + '<span class="head-actions">' + discussButton('dash') + '</span></div>' +
-      '<p class="muted mem-notice" id="memNotice">' + MEM_NOTICE + '；本机写入只改变当前页面状态。</p>';
-
-    h += '<div class="grid">';
+    var h = pageHead('看板', '今天，先照顾眼前的一件事。', 'dash',
+      '档案 ' + state.profile + ' · ' + authorView() + ' · 记录者随条目标注');
+    h += '<p class="muted mem-notice" id="memNotice">' + MEM_NOTICE + '；本机写入只改变当前页面状态。</p>';
 
     /* 36 号 §2.6：状态卡是疾病概要的触发器，也是看板首卡（骨架卡在先，业务卡在后） */
     h += statusCard();
 
-    /* 档案头 */
-    h += '<section class="card"><div class="card-head"><h3>档案</h3>' + badge(p.phase || '') + badge('转录本 ' + (p.transcript || '未记录')) + '</div>' +
-      kvTable([['姓名', esc(p.name || '')], ['性别 / 年龄', esc((p.sex || '') + ' / ' + (p.age || '') + ' 岁')], ['概况', esc(p.meta || '')],
-        ['医生告知的分层', esc(p.risk || '')], ['一句话病史', esc(p.headline || '')], ['本人最在意的', esc(p.mindset || '')],
-        ['本页记录者', esc(recorderDefault())]]) + '</section>';
+    /* 今日 / 接下来（对齐小粉宝 dashboard-grid、小胆宝 stageCard → reminders）：
+       左＝今天要做的一件事（服药打卡）；右＝接下来的安排 + 就诊前想问的事。
+       只搬既有卡片与既有数据（p.rhythm / prepBundle().questions），不新增医学内容。 */
+    h += '<div class="today-next">';
 
-    /* 今日服药卡（S2 入口逐字：「今天吃了吗」） */
     var todayState = state.checkin;
-    h += '<section class="card"><div class="card-head"><h3>今日服药卡</h3>' + badge(currentDrugLabel()) + badge('本机打卡') + '</div>';
+    h += '<section class="card"><div class="card-head"><div><h3>今天，先照顾眼前的一件事</h3>' +
+      '<p class="card-sub">今日服药打卡 · 只记发生的事实，漏服不评判</p></div>' + badge(currentDrugLabel()) + '</div>';
     if (currentDrugKey() === 'none') {
-      h += '<p class="empty">停药中（TFR）：无每日服药打卡。' + esc(ml.note || '') + '</p>' +
-        '<p class="muted">' + esc((ml.note) || '') + '</p>';
+      h += '<p class="empty"><b>停药中（TFR）：无每日服药打卡。</b><span>' + esc(ml.note || '') + '</span></p>';
     } else if (todayState === null) {
-      h += '<p class="empty">今天还没记。</p>';
+      h += '<p class="empty"><b>今天还没记。</b><span>记一笔「已服 / 漏服」，只改变本页这一行。</span></p>';
     } else {
       h += '<p>今日状态：<strong>' + (todayState === 'taken' ? '已服' : '漏服') + '</strong>（本机记录，' + esc(TODAY) + '）</p>';
     }
@@ -1023,19 +1048,45 @@
       '<button type="button" class="btn" data-act="today-taken">今天吃了吗</button>' +
       '<button type="button" class="btn" data-act="checkin" data-v="taken">一键已服</button>' +
       '<button type="button" class="btn" data-act="checkin" data-v="missed">标记漏服</button>' +
-      '<button type="button" class="btn btn-sm" data-act="write-fail">模拟本地写失败</button>' +
-      '<a class="btn" href="#med">去服药线</a></div>';
+      '<a class="btn" href="#med">去服药线</a>' +
+      '<button type="button" class="btn btn-sm" data-act="write-fail">模拟本地写失败</button></div>';
     h += '<h4 class="h3">最近 3 天</h4><ul class="timeline">' + recent.map(function (r) {
       return '<li><span class="t-date">' + esc(r[0]) + '</span><div>' + (r[1] === 'taken' ? '已服' : (r[1] === 'missed' ? '漏服' : '无每日服药（停药期）')) +
         ' ' + recBadge(null) + '</div></li>';
     }).join('') + '</ul>';
     h += '<p class="muted">漏服不评判；补服分支规则与来源见服药线「今日打卡」。</p></section>';
 
+    var qs = prepBundle().questions.slice(0, 3);
+    h += '<section class="card"><div class="card-head"><div><h3>接下来的安排</h3>' +
+      '<p class="card-sub">日期与事项来自门诊记录，不是系统排的</p></div>' + badge(rhythm.length + ' 项') + '</div>' +
+      '<ul class="plan-list">' + rhythm.slice(0, 4).map(function (r) {
+        return '<li><span class="t-date">' + esc(r[3] || '未记录') + '</span><div><b>' + esc(r[0]) + '</b>' +
+          '<span class="muted">频率 / 书面口径：</span>' + rhythmCell(r) + '</div></li>';
+      }).join('') + '</ul>' +
+      '<p class="muted">距下次复查' + (next ? ' 约 ' + (monthsUntil(next[3]) == null ? '—' : monthsUntil(next[3]) + ' 个月') : ' —') +
+      '；这只是日期减法，不是系统排的。</p>' +
+      '<h4 class="h3">就诊前，想问的事</h4>' +
+      '<ul class="ask-list">' + qs.map(function (x) {
+        return '<li>' + esc(x.text) + (x.source ? '<span class="src">来源：' + esc(x.source) + '</span>' : '') + '</li>';
+      }).join('') + '</ul>' +
+      '<div class="row"><a class="btn" href="#prep">准备复诊（生成资料包与问题清单）</a></div></section>';
+
+    h += '</div>';
+
+    /* 业务卡：档案 / 分子线速览 / 副作用速记 / 费用速记 */
+    h += '<div class="grid">';
+
+    /* 档案头 */
+    h += '<section class="card"><div class="card-head"><h3>档案</h3>' + badge(p.phase || '') + badge('转录本 ' + (p.transcript || '未记录')) + '</div>' +
+      kvTable([['姓名', esc(p.name || '')], ['性别 / 年龄', esc((p.sex || '') + ' / ' + (p.age || '') + ' 岁')], ['概况', esc(p.meta || '')],
+        ['医生告知的分层', esc(p.risk || '')], ['一句话病史', esc(p.headline || '')], ['本人最在意的', esc(p.mindset || '')],
+        ['本页记录者', esc(recorderDefault())]]) + '</section>';
+
     /* 分子线速览卡（S1 入口逐字：「记一笔复查」） */
-    var next = (p.rhythm || [])[1] || (p.rhythm || [])[0] || null;
     h += '<section class="card"><div class="card-head"><h3>分子线速览（最近 3 点）</h3>' + badge('距下次复查' + (next ? ' 约 ' + (monthsUntil(next[3]) == null ? '—' : monthsUntil(next[3]) + ' 个月') : ' —')) + '</div>';
     if (!last3.length) {
-      h += '<p class="empty">还没有分子结果，先记一笔复查。</p>';
+      h += '<p class="empty"><b>还没有分子结果</b><span>先记一笔复查，这里会出现最近 3 点与折线。</span>' +
+        '<button type="button" class="btn" data-act="mol-new">记一笔复查</button></p>';
     } else {
       h += dataTable(['日期', 'BCR::ABL1（IS%）', '实验室', 'IS 标化', '灵敏度'], last3.map(function (pt) {
         return [esc(pt.d), esc(num(pt.v, 3)) + (pt.local ? ' ' + badge('本机新增') : ''), esc(pt.lab || '未记录'), pt.is_std === 1 ? '是' : (pt.is_std === 0 ? '否' : '未记录'), esc(pt.sens || '未记录')];
@@ -1055,7 +1106,8 @@
     });
     h += '<section class="card"><div class="card-head"><h3>副作用速记（按当前用药过滤）</h3>' + badge('当前：' + currentDrugLabel()) +
       badge('已隐藏 ' + (aeRows().length - filtered.length) + ' 条非当前用药条目') + '</div>';
-    if (!filtered.length) h += '<p class="empty">词表引导：先选一种不适（按当前用药列出），再补日期与自述。</p>';
+    if (!filtered.length) h += '<p class="empty"><b>还没有可显示的条目</b><span>词表引导：先选一种不适（按当前用药列出），再补日期与自述。</span>' +
+      '<a class="btn" href="#ae">去副作用日志</a></p>';
     else h += '<ul class="timeline">' + filtered.slice(0, 3).map(function (r) {
       return '<li><span class="t-date">' + esc(r.d) + '</span><div>' + esc(r.name) + ' ' + badge(r.drug) +
         ' ' + recBadge(r.recorder) + (r.visibility === 'private' ? badge('私密') : '') +
@@ -1081,13 +1133,6 @@
       '<div class="row"><button type="button" class="btn" data-act="cost-new">记一笔</button>' +
       '<a class="btn" href="#cost">去费用记录</a></div></section>';
 
-    /* 复诊倒计时卡（S5 入口逐字：「准备复诊」） */
-    h += '<section class="card"><div class="card-head"><h3>复诊倒计时</h3>' + badge(TODAY) + '</div>' +
-      dataTable(['事项', '频率 / 书面口径原文', '依据', '下次时间'], (p.rhythm || []).map(function (r) {
-        return [esc(r[0]), rhythmCell(r), esc(r[2]), esc(r[3])];
-      })) +
-      '<div class="row"><a class="btn" href="#prep">准备复诊（生成资料包与问题清单）</a>' + aiButton('prep', '复诊准备：整理资料包大纲') + '</div></section>';
-
     h += '</div>';
 
     /* HVT-11 信号卡 */
@@ -1097,10 +1142,6 @@
         HVT11().map(function (s) { return [esc(s[0]), esc(s[1]), esc(s[2]), badge(s[3], s[3] === '未核验')]; })) +
       '<p class="note">本卡不做个体判断，不给是否就医结论；是否联系医生由你与医生决定。来源未核实 → 标「未核验」。</p>' +
       '<p class="muted">空态（无信号记录时）：还没有记录信号，卡片只显示上面这份来源清单。</p></section>';
-
-    h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>本页 AI 协助</h3></div>' +
-      '<p class="muted">点击后派发 <code>cml:agent-draft</code>，提示词只进会话区输入框，不自动发送。</p>' +
-      '<div class="row">' + aiButton('dash') + '<a class="btn" href="#mol">分子线</a><a class="btn" href="#tfr">TFR 档案</a><a class="btn" href="#docs">资料导入</a></div></section>';
 
     /* P0-4 / P0-8：全站「⋯ 更多」收口；docs / trial 在场景路径上可达 */
     h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>手工入口与通道</h3></div>' +
@@ -1141,8 +1182,7 @@
 
   function pageMol() {
     var tabs = [['trend', '趋势与词表'], ['cards', '指标卡（分系列·翻面）'], ['lab', '复查记录 CML-LAB（二级）']];
-    var h = '<div class="page-head"><h1>分子线</h1>' + badge('档案 ' + state.profile + ' · ' + authorView()) +
-      badge('图谱 CML-MOL') + badge('记录者随条目标注') + '<span class="head-actions">' + discussButton('mol') + '</span></div>';
+    var h = pageHead('分子线', '按报告日期排的分子学记录；相邻点不可比时断开折线。', 'mol');
     h += '<div class="tabs" role="tablist">' + tabs.map(function (tb) {
       return '<button type="button" class="tab" role="tab" aria-selected="' + (state.molTab === tb[0]) + '" data-act="mol-tab" data-v="' + tb[0] + '">' + esc(tb[1]) + '</button>';
     }).join('') + '</div>';
@@ -1350,8 +1390,6 @@
       '<p class="muted">停药相关重大决策不 AI 生成、不出方向性措辞；本页只提供条件核对清单入口。</p>' +
       '<div class="row"><a class="btn" href="#tfr">去 TFR 档案（条件核对清单 + 密测轨道）</a></div></section>';
 
-    h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>本页 AI 协助</h3></div><div class="row">' + aiButton('mol', '按可比性分组') + '</div></section>';
-
     /* P0-4 / P0-7 / P0-8：「⋯ 更多」收口 + S7「停药尝试准备」+ CML-LAB 二级页入口 */
     h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>手工入口与二级页</h3></div>' +
       eachLink() + moreBlock('mol') + '</section>';
@@ -1366,8 +1404,8 @@
   function pageMed() {
     var p = profile(), ml = p.med_log || {};
     var tabs = [['checkin', '今日打卡'], ['calendar', '依从日历'], ['rx', '处方变更（二级）']];
-    var h = '<div class="page-head"><h1>服药线</h1>' + badge('档案 ' + state.profile + ' · ' + authorView()) + badge('图谱 CML-MED') + badge('记录者随条目标注') + '<span class="head-actions">' + discussButton('med') + '</span></div>';
-    h += '<p class="muted">本一级页的 AI 协助入口在「处方变更（二级）」节（1 处）；「今日打卡」节不提供 AI 生成，理由写在该节内。' +
+    var h = pageHead('服药线', '每日打卡与处方变更分开记；漏服不评判。', 'med');
+    h += '<p class="muted">本页 AI 入口只有页头「和 AI 讨论」一颗；「今日打卡」节不提供 AI 生成，理由写在该节内。' +
       '<button type="button" class="btn btn-sm" data-act="med-tab" data-v="rx">打开处方变更节</button></p>';
     h += '<div class="tabs" role="tablist">' + tabs.map(function (tb) {
       return '<button type="button" class="tab" role="tab" aria-selected="' + (state.medTab === tb[0]) + '" data-act="med-tab" data-v="' + tb[0] + '">' + esc(tb[1]) + '</button>';
@@ -1453,10 +1491,6 @@
         '<div class="row"><button type="button" class="btn" data-act="rx-save">提交（只新增版本）</button>' +
         '<button type="button" class="btn btn-sm" data-act="rx-clear">清空草稿</button></div>' +
         '<p class="muted">原因原文只照抄你手里的门诊记录 / 医嘱文字；本仓不代拟药名与剂量。</p></section>';
-
-      h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>本页 AI 协助（仅处方变更节）</h3></div>' +
-        '<p class="muted">今日打卡节不提供 AI 生成（理由见该节）；处方变更是文本归纳任务，可带上下文生成草稿。</p>' +
-        '<div class="row">' + aiButton('med', '整理处方变更线') + '</div></section>';
     }
 
     /* P0-4：全站「⋯ 更多」收口（含逐字入口「换药/调剂量了」） */
@@ -1472,8 +1506,7 @@
     var keep = lexiconKeys();
     var shown = rows.filter(function (r) { return keep.indexOf(r.drug) >= 0 || r.example; });
     var hidden = rows.length - shown.length;
-    var h = '<div class="page-head"><h1>副作用日志</h1>' + badge('档案 ' + state.profile + ' · ' + authorView()) +
-      badge('HVT-05 / HVT-09') + badge('记录者随条目标注') + '<span class="head-actions">' + discussButton('ae') + '</span></div>';
+    var h = pageHead('副作用日志', '只记录不适与处理原文，不出现严重度判读列。', 'ae');
 
     h += '<section class="card"><div class="card-head"><h3>按当前用药过滤的词表</h3>' + badge('当前：' + currentDrugLabel()) +
       badge('已过滤掉 ' + hidden + ' 条非当前用药条目') + '</div>';
@@ -1536,9 +1569,6 @@
         ['<code>buildSummary()</code> 保留 / 过滤', filterPrivate(aeAll, 'summary').length + ' / ' + (aeAll.length - filterPrivate(aeAll, 'summary').length)]]) +
       '<p class="muted">行内「标为私密 / 改为共享」会立刻改变上面三个出口的计数（与页面计数用同一个 <code>aeRows()</code> 数组、同一个 <code>filterPrivate(list, exit)</code>）。</p></section>';
 
-    h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>本页 AI 协助</h3></div>' +
-      '<div class="row">' + aiButton('ae', '按药整理时间线') + '</div></section>';
-
     /* P0-4：全站「⋯ 更多」收口 */
     h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>手工入口</h3></div>' + moreBlock('ae') + '</section>';
     return h;
@@ -1563,7 +1593,7 @@
   }
   function pageTfr() {
     var tfr = profile().tfr || { must: [], min: [], monitor: [] };
-    var h = '<div class="page-head"><h1>TFR 档案</h1>' + badge('档案 ' + state.profile + ' · ' + authorView()) + badge('HVT-08') + badge('本页零判读') + '<span class="head-actions">' + discussButton('tfr') + '</span></div>';
+    var h = pageHead('TFR 档案', '只列书面条件与三态核对；本页不提供 AI 生成。', null, '档案 ' + state.profile + ' · ' + authorView() + ' · 本页零判读');
 
     h += '<section class="card"><div class="card-head"><h3>核对状态（照抄）</h3>' + badge('核对状态：' + tfrStatusLabel(tfr.status)) + '</div>' +
       aiForbiddenNote('tfr') + tfrStatusDetail(tfr.status) +
@@ -1624,8 +1654,7 @@
     var lastMonth = Object.keys(byMonth).sort().pop() || '—';
     var monthSum = (byMonth[lastMonth] || []).reduce(function (a, c) { return a + Number(c.amt || 0) * Number(c.qty == null ? 1 : c.qty); }, 0);
 
-    var h = '<div class="page-head"><h1>费用记录</h1>' + badge('档案 ' + state.profile + ' · ' + authorView()) +
-      badge('按月聚合，不跨药混算') + badge('记录者随条目标注') + '<span class="head-actions">' + discussButton('cost') + '</span></div>' +
+    var h = pageHead('费用记录', '按月 × 按药聚合，不跨药混算。', 'cost');
       '<p class="muted mem-notice">' + MEM_NOTICE + '：提交后当月聚合与按药小计立刻变化。</p>' +
       '<div class="row"><button type="button" class="btn" data-act="cost-new">记一笔</button>' +
       '<span class="muted">入口逐字：费用卡「记一笔」（手工 5 字段）。</span></div>';
@@ -1671,7 +1700,6 @@
         '<div class="chart-wrap">' + chartSVG(mc, { milestones: false, legend: false }) + '</div>' +
         '<p class="muted">口径：' + esc(mc.note || '') + '；本图按数值线性绘制，不做判读。</p></section>';
     }
-    h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>本页 AI 协助</h3></div><div class="row">' + aiButton('cost', '按月按药汇总') + '</div></section>';
     h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>手工入口</h3></div>' + moreBlock('cost') + '</section>';
     return h;
   }
@@ -1679,8 +1707,7 @@
   /* ================= 页面：fert（S9：入口逐字「我要问的」） ================= */
   function pageFert() {
     var rows = fertilityRows();
-    var h = '<div class="page-head"><h1>生育计划</h1>' + badge('档案 ' + state.profile + ' · ' + authorView()) +
-      badge('HVT-10') + badge('默认私密') + badge('记录者随条目标注') + '<span class="head-actions">' + discussButton('fert') + '</span></div>';
+    var h = pageHead('生育计划', '事实卡与问题清单；本页不提供 AI 生成。', null, '档案 ' + state.profile + ' · ' + authorView() + ' · 默认私密');
     h += '<section class="card">' + aiForbiddenNote('fert') + privateNote() + '</section>';
 
     h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>事实卡（零处置）</h3></div>';
@@ -1729,7 +1756,7 @@
     var keptSum = filterPrivate(b.all, 'summary');
     var sec = bundleSections(keptExport);
 
-    var h = '<div class="page-head"><h1>复诊准备</h1>' + badge('档案 ' + state.profile + ' · ' + authorView()) + badge('S5') + badge('记录者随条目标注') + '<span class="head-actions">' + discussButton('prep') + '</span></div>';
+    var h = pageHead('复诊准备', '把区间内的事实、看法与问题整理成一份可带走的资料包。', 'prep');
     h += '<section class="card"><div class="card-head"><h3>时间区间</h3></div><div class="row">' +
       [['range-3m', '近 3 个月'], ['range-6m', '近 6 个月'], ['all', '全部']].map(function (o) {
         return '<button type="button" class="chip" data-act="prep-range" data-v="' + o[0] + '" aria-pressed="' + (state.prepRange === o[0]) + '">' + o[1] + '</button>';
@@ -1758,7 +1785,7 @@
         ['导出内容构成', '事实区 ' + sec.facts.length + ' 条 + 看法区 ' + sec.views.length + ' 条 + 问题清单 ' + sec.questions.length + ' 条 = ' + keptExport.length + ' 条']]) +
       '<p class="muted">页面上的「保留 N」与导出的「条目 N 条」用同一个数组、同一次 <code>filterPrivate(list, "export")</code> 算出；导出只含事实区 / 看法区 / 问题清单三块，不含费用明细。</p>' +
       '<div class="row"><button type="button" class="btn" data-act="prep-export">导出资料包（private 过滤生效）</button>' +
-      '<button type="button" class="btn" data-act="prep-summary">生成摘要</button>' + aiButton('prep', '整理资料包大纲') + '</div>' +
+      '<button type="button" class="btn" data-act="prep-summary">生成摘要</button></div>' +
       '<pre class="agent-log" id="prepOut">' + esc(state.prepOut || '（尚未导出）') + '</pre></section>';
 
     /* P0-8：把 docs / trial 放进场景路径 */
@@ -1779,8 +1806,7 @@
     });
     var acceptedN = cands.filter(function (c) { return c.status === '已接受'; }).length;
 
-    var h = '<div class="page-head"><h1>资料导入</h1>' + badge('档案 ' + state.profile + ' · ' + authorView()) +
-      badge('MinerU 六部件') + badge('候选 → 核对 → 入库') + '<span class="head-actions">' + discussButton('docs') + '</span></div>' +
+    var h = pageHead('资料导入', '候选 → 逐项核对 → 入库；核对只表示转录检查过。', 'docs');
       '<p class="muted mem-notice" id="memNotice">' + MEM_NOTICE + '：「接受」只改本页候选状态与计数。</p>';
 
     h += '<section class="card"><div class="card-head"><h3>① 拖放区</h3></div>' +
@@ -1828,10 +1854,6 @@
             esc(x.recorder || '未记录'), '<span class="muted">' + esc(x.src) + '</span>'];
         }));
       })() + '</section>';
-
-    h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>本页 AI 协助</h3></div>' +
-      '<div class="row">' + aiButton('docs', '列字段候选供核对') + '</div>' +
-      '<p class="muted">生成物一律进「候选 → 逐项核对」通道，不会直接入库。</p></section>';
 
     h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>手工入口与去向</h3></div>' +
       '<p class="muted">本页候选是复诊资料包「事实区」的来源 → <a href="#prep">去复诊准备看资料包</a>。</p>' +
@@ -2302,8 +2324,8 @@
     var a = matchOf(state.profile);
     var fs = enrollmentOf(state.profile);
     var present = fs.filter(function (f) { return f.present; }).length;
-    var h = '<div class="page-head"><h1>临床试验</h1>' + badge('档案 ' + state.profile) +
-      badge('演示数据') + badge('完整度 ' + present + '/' + fs.length) + badge('无匹配度百分比') + '<span class="head-actions">' + discussButton('trial') + '</span></div>';
+    var h = pageHead('临床试验', '入组档案全部来自既有病情数据；缺失一律流向无法判定。', 'trial',
+      '档案 ' + state.profile + ' · 演示数据（M4 前为虚构记录） · 完整度 ' + present + '/' + fs.length);
 
     /* ① 入组档案（建档：基因 / 病理 / 细胞遗传学 / 治疗史 / 器官功能） */
     h += '<section class="card">' + enrollmentBody() + '</section>';
@@ -2314,15 +2336,8 @@
     /* ③ 检索（与匹配是两步，不合并） */
     h += '<section class="card" style="margin-top:12px">' + trialListBody() + '</section>';
 
-    /* ④ AI 协助：只把提示词填进输入框，不自动发送、不下结论 */
-    var mp = '请只根据我「入组档案」里的记录，对上面试验的入组条件逐条判断，' +
-      '只用「已满足 / 可能冲突 / 无法判定」三档逐条列出，每条写清「你的记录」与来源；' +
-      '缺失字段一律判「无法判定」；不输出匹配度百分比、不排序、不写哪条更适合我。' +
-      '入组资格以医生与研究中心为准。';
-    h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>AI 协助整理问题</h3>' +
-      aiForbiddenNote('trial') + '</div>' +
-      '<p class="muted">只把问题整理成清单：按钮只把提示词填进右上角输入框，<strong>不会自动发送</strong>，也不替你下结论。</p>' +
-      '<div class="row">' + aiButton('trial', '把比对提示词填进输入框', mp) + '</div></section>';
+    /* ④ 本页 AI 入口只在页头（pageHead 的「和 AI 讨论」）：
+       点它把本页事实带进宿主原生会话草稿，不代发、不下结论。 */
 
     h += '<section class="card" style="margin-top:12px"><div class="card-head"><h3>从哪里进来（场景路径）</h3></div>' +
       '<p class="muted">分子线趋势页的词表卡给出「临床研究核对字段」入口 → <a href="#mol">去分子线趋势与词表</a>；' +
@@ -2333,8 +2348,7 @@
 
   /* ================= 路由与渲染 ================= */
   function pageOneChart() {
-    var h = '<div class="page-head"><h1>病情一图秀</h1>' + badge('档案 ' + state.profile + ' · ' + authorView()) +
-      badge('归一化叠看') + badge('不做加总') + '<span class="head-actions">' + discussButton('onechart') + '</span></div>';
+    var h = pageHead('病情一图秀', '多条指标叠在同一时间轴；各按自身量程，不做加总。', 'onechart');
     return h + oneChartBody();
   }
 
@@ -2479,7 +2493,9 @@
       b.setAttribute('aria-pressed', String(b.getAttribute('data-p') === state.profile));
     });
     var di = $('dirIndicator');
-    if (di) di.textContent = '资料目录：' + DATA_DIR + ' · 已挂载';
+    if (di) { di.textContent = '已挂载'; di.title = DATA_DIR; }
+    var bc = $('breadcrumb');
+    if (bc) bc.textContent = ROUTE_LABEL[state.route] || '看板';
     /* P0-1：打印媒体下新建的折叠卡也要展开（否则打印丢内容） */
     if (printMediaMatches()) setPrintOpen(true);
   }

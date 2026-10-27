@@ -11,55 +11,68 @@
 
 <a class="skip" href="#view">跳到主要内容</a>
 
-<!-- 顶栏：版本字面量 v0.1.1 常显；资料目录指示器；疾病概要「?」；设置；AI 对话状态 -->
+<!-- 顶栏：左侧面包屑（小粉宝/小胆宝同款），右侧状态入口。
+     AI 入口只有一颗：宿主原生会话（页面内不自建聊天窗/输入框/发送键）。 -->
 <header class="topbar">
-  <div class="brand">小粒宝 GranPal <span class="ver">v0.1.1</span></div>
-
-  <nav class="profiles" aria-label="档案切换（A：患者本人视角 / B：家属代记视角）">
-    <button type="button" class="chip" data-act="profile" data-p="A">档案 A · 患者本人视角</button>
-    <button type="button" class="chip" data-act="profile" data-p="B">档案 B · 家属代记视角</button>
-  </nav>
+  <div class="breadcrumb">小粒宝工作台 <span>/</span> <b id="breadcrumb">看板</b></div>
 
   <div class="topbar-right">
-    <span class="dir-indicator" id="dirIndicator" title="患者资料目录（本机）">资料目录：~/GranPal/病历资料 · 已挂载</span>
-    <button type="button" class="btn" data-primer-open aria-haspopup="dialog" aria-controls="disease-primer" aria-expanded="false" aria-label="疾病概要：定义、医学资料与指南情况、治疗全景、发展趋势" title="疾病概要：定义 · 指南 · 治疗全景 · 趋势">?</button>
+    <button type="button" class="status-chip" data-act="settings" aria-haspopup="dialog" aria-label="资料目录：~/GranPal/病历资料，已挂载；点击打开设置">
+      <i class="dot" aria-hidden="true"></i><span>资料目录</span><b id="dirIndicator" title="~/GranPal/病历资料">已挂载</b>
+    </button>
+    <button type="button" class="status-chip" data-act="agent-open" id="agentBtn" aria-label="AI 对话：由 DSH 宿主提供，点击调起原生会话">
+      <i class="dot grey" id="agentDot" aria-hidden="true"></i><span>AI 对话</span><b id="connState">未连接</b>
+    </button>
     <button type="button" class="btn" data-act="settings" aria-haspopup="dialog">设置</button>
-    <button type="button" class="btn btn-ai" data-act="agent-open" id="agentBtn" aria-label="打开宿主原生 AI 对话">对话</button>
-    <span class="conn" id="connState">AI 对话：未连接</span>
+    <button type="button" class="btn" data-primer-open aria-haspopup="dialog" aria-controls="disease-primer" aria-expanded="false" aria-label="疾病概要：定义、医学资料与指南情况、治疗全景、发展趋势" title="疾病概要：定义 · 指南 · 治疗全景 · 趋势">?</button>
+    <button type="button" class="ver-chip" data-act="settings" aria-haspopup="dialog" aria-label="关于小粒宝：查看版本号与构建信息">v0.1.1</button>
   </div>
 </header>
 
 <div class="app" id="app">
 
-  <!-- 一级页导航（10 条）-->
-  <nav class="sidebar" aria-label="一级页面">
-    <ul id="navList">
-      <li><a href="#dash" data-route="dash">看板</a></li>
-      <li><a href="#mol" data-route="mol">分子线</a></li>
-      <li><a href="#med" data-route="med">服药线</a></li>
-      <li><a href="#ae" data-route="ae">副作用日志</a></li>
-      <li><a href="#tfr" data-route="tfr">TFR 档案</a></li>
-      <li><a href="#cost" data-route="cost">费用记录</a></li>
-      <li><a href="#fert" data-route="fert">生育计划</a></li>
-      <li><a href="#prep" data-route="prep">复诊准备</a></li>
-      <li><a href="#docs" data-route="docs">资料导入</a></li>
-      <li><a href="#trial" data-route="trial">临床试验</a></li>
-    </ul>
-    <p class="nav-note">设置＝顶栏弹窗，不计一级页。</p>
-  </nav>
+  <!-- 侧栏：品牌 + 档案切换 + 一级页导航 + 家族尾注（与两份范本同构） -->
+  <aside class="sidebar" aria-label="小粒宝业务导航">
+    <div class="brand"><span class="brand-mark" aria-hidden="true">粒</span>
+      <div><strong>小粒宝</strong><span>GranPal · 陪你慢慢来</span></div></div>
+
+    <div class="profiles" role="group" aria-label="档案切换（A：患者本人视角 / B：家属代记视角）">
+      <button type="button" class="profile-chip" data-act="profile" data-p="A"><b>档案 A</b><span>患者本人视角</span></button>
+      <button type="button" class="profile-chip" data-act="profile" data-p="B"><b>档案 B</b><span>家属代记视角</span></button>
+    </div>
+
+    <nav class="nav" aria-label="一级页面">
+      <ul id="navList">
+        <li><a href="#dash" data-route="dash">看板</a></li>
+        <li><a href="#mol" data-route="mol">分子线</a></li>
+        <li><a href="#med" data-route="med">服药线</a></li>
+        <li><a href="#ae" data-route="ae">副作用日志</a></li>
+        <li><a href="#tfr" data-route="tfr">TFR 档案</a></li>
+        <li><a href="#cost" data-route="cost">费用记录</a></li>
+        <li><a href="#fert" data-route="fert">生育计划</a></li>
+        <li><a href="#prep" data-route="prep">复诊准备</a></li>
+        <li><a href="#docs" data-route="docs">资料导入</a></li>
+        <li><a href="#trial" data-route="trial">临床试验</a></li>
+      </ul>
+    </nav>
+
+    <div class="sidebar-bottom">
+      <span class="eyebrow">小 X 宝家族</span>
+      <p>记录可以少一点，<br>陪伴可以久一点。</p>
+    </div>
+  </aside>
 
   <div class="main-col">
     <main id="view" tabindex="-1" aria-live="polite"></main>
   </div>
 </div>
 
-<!-- 页脚贴底：flex column + margin-top:auto；版本字面量 v0.1.1 + 构建日 + 数据目录状态 -->
+<!-- 页脚贴底：flex column + margin-top:auto。
+     只留三样：一句定位、一句边界、版本号 + 构建日（数据目录与演示数据说明在设置弹窗里）。 -->
 <footer class="footer">
-  <span>小粒宝 GranPal <b class="ver">v0.1.1</b></span>
-  <span>构建日：2026-10-25</span>
-  <span>数据目录：~/GranPal/病历资料 · 状态：已挂载（本机）</span>
-  <span>示例数据：prototypes/v0.2/demo-data.js（只读）</span>
-  <span class="mem-notice" id="memNoticeFooter">原型为内存态，刷新回到演示数据</span>
+  <span>小粒宝 · 与 CML 患者和照护者一起记录、看懂、准备沟通</span>
+  <span class="boundary">记录不是诊断 · 处置由治疗团队判断</span>
+  <span class="ver-line"><b class="ver">v0.1.1</b><em>构建 2026-10-25</em></span>
 </footer>
 
 <!-- 设置弹窗 CML-CFG：资料目录 / 凭据状态 / 临床数据包 / 关于与版本 -->
@@ -151,21 +164,13 @@
    另有顶栏「设置」弹窗（资料目录 / 凭据状态 / 临床数据包 / 关于与版本），按 UI-DESIGN 不计一级。
    hash 路由：#dash #mol #med #med/checkin #med/calendar #med/rx #ae #tfr #cost #fert #prep #docs #trial；刷新保持当前页（DOM 断言 PASS）。
 
-2) 每个页面的 AI 按钮有无（DOM 实测，A 与 B 相同；按钮均为 data-act="ai"）
-   dash = 2（看板本页 1 + 复诊倒计时卡内「复诊准备」1）
-   mol  = 1
-   med  = 1，但只在「处方变更（rx）」二级节；默认 tab＝今日打卡，所以默认视图上 med 的 AI 按钮计数 = 0
-          （需求允许：med 打卡页除外，理由已写在该节内：打卡是每日事实写入，无文本需归纳，且模型产出的「补服/停药」措辞会越界成处置方向）
-   ae   = 1
-   tfr  = 0（红线：重大决策不 AI 生成，页面已写「本页不提供 AI 生成」）
-   cost = 1
-   fert = 0（红线：同上，页面已写「本页不提供 AI 生成」）
-   prep = 1
-   docs = 1
-   trial= 1
-   点击行为（DOM 断言 PASS）：dispatchEvent(new CustomEvent('cml:agent-draft', {detail:{prompt, context}}))；
-   context 含 page / profile / range / records / filter。
-   2026-10-27 修订：页面不再自带会话栏/textarea——「和 AI 讨论」「AI 协助」只派发 cml:agent-draft，
+2) 每个页面的 AI 入口（2026-10-27 R9 收敛后：页面级只剩页头一颗「和 AI 讨论」，顶栏只剩一颗「AI 对话」）
+   dash / mol / onechart / med / ae / cost / prep / docs / trial = 1（页头 data-act="discuss"）
+   tfr / fert = 0（红线：重大决策不 AI 生成，页面已写「本页不提供 AI 生成」，页头也不再放按钮）
+   顶栏：data-act="agent-open" 只有 1 颗（status-chip，内含 #connState 状态文字），页面内不自建聊天窗/输入框。
+   点击行为：页头「和 AI 讨论」派发 cml:agent-draft（detail 含 prompt + 本页事实 context），
+   并请求宿主把原生会话叫到前台；context 含 page / profile / range / records / filter。
+   2026-10-27 修订：页面不再自带会话栏/textarea——页头入口只派发 cml:agent-draft，
    由 public/bridge.js 转给宿主外框写进原生会话草稿（只填不发送）；独立打开时给底部短提示，不假装有 AI。
 
 3) [open] 默认数 = 0
@@ -214,7 +219,8 @@
      以 `shasum -a 256 prototypes/v0.2/demo-data.js` 与 `scripts/check-demo-data.mjs` 的输出为准，本文件不复制数字；B 档案患者原话为敏感词，界面不渲染、只在带来源 `<q>` 内按原文出现。
 
 8) 其他硬规则实跑结果
-   版本字面量 v0.1.1：顶栏与页脚都在；页脚含构建日 2026-10-25 与数据目录状态「~/GranPal/病历资料 · 已挂载（本机）」。
+   版本字面量 v0.1.1：顶栏版本章（ver-chip）与页脚都在；页脚含构建日 2026-10-25 与边界语「记录不是诊断 · 处置由治疗团队判断」。
+   （2026-10-27 R9：页脚不再放数据目录路径与 demo-data 路径——它们属于设置弹窗的「关于与版本」，页脚只留定位、边界、版本三样。）
    疾病概要（36 号 v2）：顶栏「?」（手写 aria-label）与看板状态卡副按钮均在；四段固定 definition → evidence → landscape → trend；
    链接闸门 `node scripts/check-primer-links.mjs` 全过；探针 `node scripts/probe-disease-primer.mjs` 10/10。
    页脚贴底：短页面（#trial）footer.bottom = 视口高（flex column + margin-top:auto + 面板内部滚动）。

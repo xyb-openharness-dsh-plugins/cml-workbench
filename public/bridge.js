@@ -22,8 +22,12 @@
     if (ev.origin !== window.location.origin) return; // 同源校验
     var d = ev.data || {};
     if (d.type !== 'cml:agent-state') return;
+    /* 顶栏只有一颗 AI 入口：状态文字只写状态本身（标签「AI 对话」固定在外层按钮里），
+       圆点随状态变色；页面依旧不自建聊天窗。 */
     var node = document.getElementById('connState');
-    if (node) node.textContent = 'AI 对话：' + (d.state || '未连接');
+    if (node) node.textContent = d.state || '未连接';
+    var dot = document.getElementById('agentDot');
+    if (dot) dot.className = 'dot' + (/未|错|断|离线/.test(String(d.state || '未连接')) ? ' grey' : '');
   });
 
   /* 告诉外框"页面已就绪"，外框据此把五态同步过来 */
