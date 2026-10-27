@@ -1,11 +1,11 @@
-/* 小粒宝 GranPal · CML 患者工作台 · M2 交互原型（v0.1.1）
+/* 小粒宝 GranPal · CML 患者工作台 · M2 交互原型（v0.1.2）
  * 数据来源：window.DEMO_DATA（prototypes/v0.2/demo-data.js，只读；本文件不修改、不重新生成数据）
  * 规则：无判读列 / 趋势线单色 / 分类值不画曲线 / private 三出口代码级过滤 / 全站字号 12.5-15px
  */
 (function () {
   'use strict';
 
-  var VERSION = 'v0.1.1';
+  var VERSION = 'v0.1.2';
   var BUILD = '2026-10-25';
   var DATA_DIR = '~/GranPal/病历资料';
   var TODAY = '2026-10-13';

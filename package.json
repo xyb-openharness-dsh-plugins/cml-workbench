@@ -1,6 +1,6 @@
 {
   "name": "@xyb-community/cml-workbench",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "CML 患者与照护者的本机病程资料工作台：BCR::ABL1 国际标尺分子线、TKI 服药与换线档案、副作用日志、TFR 停药尝试旅程、用药费用记录",
   "private": true,
   "type": "module",
