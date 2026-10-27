@@ -1023,7 +1023,7 @@
 
     var h = pageHead('看板', '今天，先照顾眼前的一件事。', 'dash',
       '档案 ' + state.profile + ' · ' + authorView() + ' · 记录者随条目标注');
-    h += '<p class="muted mem-notice" id="memNotice">' + MEM_NOTICE + '；本机写入只改变当前页面状态。</p>';
+
 
     /* 36 号 §2.6：状态卡是疾病概要的触发器，也是看板首卡（骨架卡在先，业务卡在后） */
     h += statusCard();
@@ -1198,8 +1198,8 @@
     var h = '';
     /* 复查记录（二级：录入 / 更正）——P0-5：保存真的写入本机内存态并让趋势图新增点 */
     h += '<section class="card" id="molFormCard" style="margin-top:12px"><div class="card-head"><h3>复查记录（二级：录入 / 更正）</h3>' +
-      badge('显式编辑 ≤1/页') + badge('记录者：' + recorderDefault()) + '</div>' +
-      '<p class="muted mem-notice">' + MEM_NOTICE + '：保存后趋势图会新增 1 个点、分子记录 +1；刷新即回到演示数据。</p>';
+      badge('显式编辑 ≤1/页') + badge('记录者：' + recorderDefault()) + '</div>'
+
     var w = lastWrite('mol');
     if (w && w.profile === state.profile) h += '<p class="ok" id="molWriteMsg">' + esc(w.text) + '</p>';
     if (state.molDraft) {
@@ -1242,7 +1242,7 @@
       ((m && m.points) || []).forEach(function (x) { if (x.d === d) v = x.v; });
       return v;
     };
-    var h = '<p class="muted mem-notice">' + MEM_NOTICE + '。</p>';
+    var h = '';
     h += '<section class="card"><div class="card-head"><h3>血常规密测轨道（HVT-06）</h3>' +
       badge('前 2 个月每 1–2 周（照抄书面口径）') + badge('共 ' + dates.length + ' 次') + '</div>' +
       '<p class="note">书面口径（照抄）：治疗前 2 个月每 1–2 周复查血常规；之后按门诊安排。来源：中国 CML 诊疗指南（2025 版）· 血液学监测章节 · GL-CN-2025。</p>' +
@@ -1277,7 +1277,7 @@
     var p = profile();
     var ms = metrics();
     var sel = state.molKeys.slice(0, 4);
-    var h = '<p class="muted mem-notice" id="memNotice">' + MEM_NOTICE + '。</p>';
+    var h = '';
 
     /* 状态演示（按 UI-DESIGN §四：加载/空态/单条/错误） */
     h += '<section class="card"><div class="card-head"><h3>状态与缩放</h3></div>' +
@@ -1472,8 +1472,8 @@
       /* P0-4：处方变更手工通道（6 字段） */
       var rd = draft().rx || null;
       h += '<section class="card" id="rxFormCard" style="margin-top:12px"><div class="card-head"><h3>换药/调剂量了（手工 6 字段）</h3>' +
-        badge('记录者：' + recorderDefault()) + '</div>' +
-        '<p class="muted mem-notice">' + MEM_NOTICE + '：提交后处方变更线新增 1 段，旧段不被覆盖。</p>';
+        badge('记录者：' + recorderDefault()) + '</div>'
+
       var rw = lastWrite('rx');
       if (rw && rw.profile === state.profile) h += '<p class="ok" id="rxWriteMsg">' + esc(rw.text) + '</p>';
       h += '<div class="grid">' +
@@ -1536,8 +1536,8 @@
     /* P0-3：≤5 字段手工表单 */
     var ad = draft().ae || null;
     h += '<section class="card" id="aeFormCard" style="margin-top:12px"><div class="card-head"><h3>记一次不舒服（手工 5 字段）</h3>' +
-      badge('记录者：' + recorderDefault()) + '</div>' +
-      '<p class="muted mem-notice">' + MEM_NOTICE + '：提交后下面时间线新增 1 条。</p>';
+      badge('记录者：' + recorderDefault()) + '</div>'
+
     var aw = lastWrite('ae');
     if (aw && aw.profile === state.profile) h += '<p class="ok" id="aeWriteMsg">' + esc(aw.text) + '</p>';
     h += '<div class="grid">' +
@@ -1655,7 +1655,7 @@
     var monthSum = (byMonth[lastMonth] || []).reduce(function (a, c) { return a + Number(c.amt || 0) * Number(c.qty == null ? 1 : c.qty); }, 0);
 
     var h = pageHead('费用记录', '按月 × 按药聚合，不跨药混算。', 'cost');
-      '<p class="muted mem-notice">' + MEM_NOTICE + '：提交后当月聚合与按药小计立刻变化。</p>' +
+
       '<div class="row"><button type="button" class="btn" data-act="cost-new">记一笔</button>' +
       '<span class="muted">入口逐字：费用卡「记一笔」（手工 5 字段）。</span></div>';
 
@@ -1807,7 +1807,7 @@
     var acceptedN = cands.filter(function (c) { return c.status === '已接受'; }).length;
 
     var h = pageHead('资料导入', '候选 → 逐项核对 → 入库；核对只表示转录检查过。', 'docs');
-      '<p class="muted mem-notice" id="memNotice">' + MEM_NOTICE + '：「接受」只改本页候选状态与计数。</p>';
+
 
     h += '<section class="card"><div class="card-head"><h3>① 拖放区</h3></div>' +
       '<p class="empty">把 PDF / 拍照报告拖到这里，或点下面的按钮选文件（原型不读本机文件）。</p>' +
@@ -1997,7 +1997,7 @@
   }
 
   function molCardsBody() {
-    var h = '<p class="muted mem-notice">' + MEM_NOTICE + '。</p>';
+    var h = '';
     h += '<section class="card"><div class="card-head"><h3>按类别分系列</h3>' +
       badge('点卡片翻面') + badge('逐项记录，不加总') + '</div>' +
       '<p class="muted">一张卡 = 一个可比序列。类别与顺序取唯一目录（与一图秀共用同一份），页面不做第二处分组。' +
@@ -2032,7 +2032,7 @@
   function oneChartBody() {
     var ms = metrics();
     var sel = oneChartSel().filter(function (k) { return metricByKey(k); }).slice(0, 4);
-    var h = '<p class="muted mem-notice">' + MEM_NOTICE + '。</p>';
+    var h = '';
 
     /* ---- 指标选择窗口（≤4 多选；按类别分组；独立滚动） ---- */
     var picker = '<div class="muted">已选 <strong id="oneCount">' + sel.length + '</strong>/4（最多同时看 4 条线，超过会让图读不清）</div>' +
