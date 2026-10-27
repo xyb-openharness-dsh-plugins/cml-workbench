@@ -22,7 +22,7 @@ window.DISEASE_PRIMER = {
       sources: [
         { org: '中华医学会血液学分会', doc: '中国 CML 诊断与治疗指南（2025）', version: '中华血液学杂志 2025;46(12):1081-1093', original: true, nolink: true, note: 'PMC12790979 实测返回 203/0 chars、DOI 落地页为 JS 渲染，验链器未取得 OK；本台研究阶段曾据 PMC 全文核对口径' },
         { org: 'ICC', doc: 'International Consensus Classification of Myeloid Neoplasms and Acute Leukemias', version: '2022（Blood 2022;140(11):1200-1228）', original: true, nolink: true, note: 'Blood DOI 返回 403、PMC9479031 返回 203/0 chars，验链器未取得 OK' },
-        { org: 'ELN', doc: '2025 European LeukemiaNet recommendations for the management of CML', version: 'Leukemia 2025;39(8):1797-1813', original: true, kind: 'fulltext', url: 'https://www.ncbi.nlm.nih.gov/pmc/articles/PMC12310532/', page: '页码待核' }
+        { org: 'ELN', doc: '2025 European LeukemiaNet recommendations for the management of CML', version: 'Leukemia 2025;39(8):1797-1813', original: true, kind: 'fulltext', url: 'https://www.ebi.ac.uk/europepmc/webservices/rest/PMC12310532/fullTextXML', page: '页码待核', note: 'Europe PMC 官方全文接口（XML）；人工阅读页见 PMC12310532（NCBI 对自动访问返回 203）' }
       ]
     },
     {
@@ -36,7 +36,7 @@ window.DISEASE_PRIMER = {
             { text: '未取得可验证原件', nolink: true, note: 'PMC12790979 返回 203/0 chars、DOI 落地页为 JS 渲染，验链器未取得 OK' },
             '诊断线、监测节奏、TFR 条件等原文口径的出处'],
           ['ELN', '2025 European LeukemiaNet recommendations for the management of CML', 'Leukemia 2025;39(8):1797-1813',
-            { text: '已取得：PMC 全文', kind: 'fulltext', url: 'https://www.ncbi.nlm.nih.gov/pmc/articles/PMC12310532/' },
+            { text: '已取得：PMC 全文（Europe PMC fullTextXML）', kind: 'fulltext', url: 'https://www.ebi.ac.uk/europepmc/webservices/rest/PMC12310532/fullTextXML', note: '人工阅读页见 PMC12310532（NCBI 对自动访问返回 203）' },
             '风险分层、监测与 TFR 口径的并列引用'],
           ['ELN', 'ELN CML 项目页（官网入口）', '访问于 2026-10-27',
             { text: '官方入口', kind: 'hub', url: 'https://www.leukemia-net.org/leukemias/cml/project_info/', note: 'ELN 官网 CML 项目页；2025 建议全文见 Leukemia 2025;39(8):1797-1813 / PMC12310532，本台未在该页取得全文' },
@@ -54,7 +54,7 @@ window.DISEASE_PRIMER = {
         '本台对未取得原件的文件只记「存在」与「大致讲什么」，不引用其具体条文。'
       ],
       sources: [
-        { org: 'ELN', doc: '2025 European LeukemiaNet recommendations for the management of CML', version: 'Leukemia 2025;39(8):1797-1813', original: true, kind: 'fulltext', url: 'https://www.ncbi.nlm.nih.gov/pmc/articles/PMC12310532/', page: '页码待核' },
+        { org: 'ELN', doc: '2025 European LeukemiaNet recommendations for the management of CML', version: 'Leukemia 2025;39(8):1797-1813', original: true, kind: 'fulltext', url: 'https://www.ebi.ac.uk/europepmc/webservices/rest/PMC12310532/fullTextXML', page: '页码待核', note: 'Europe PMC 官方全文接口（XML）；人工阅读页见 PMC12310532（NCBI 对自动访问返回 203）' },
         { org: 'NCCN', doc: 'NCCN Guidelines · Chronic Myeloid Leukemia', version: 'V2.2024', entry: true, kind: 'hub', url: 'https://www.nccn.org/guidelines/guidelines-detail?category=1&id=1096', note: '临床版全文需在 NCCN 官网注册后取得；本台未取得该版原件' },
         { org: 'ELN', doc: 'ELN CML 项目页（官网入口）', version: '访问于 2026-10-27', entry: true, kind: 'hub', url: 'https://www.leukemia-net.org/leukemias/cml/project_info/', note: 'ELN 官网 CML 项目页；2025 建议全文见 Leukemia 2025;39(8):1797-1813 / PMC12310532，本台未在该页取得全文' },
         { org: '中华医学会血液学分会', doc: '中国 CML 诊断与治疗指南（2025）', version: '中华血液学杂志 2025;46(12):1081-1093', original: true, nolink: true, note: 'PMC 与 DOI 落地页均未取得验链器 OK' },
@@ -93,7 +93,7 @@ window.DISEASE_PRIMER = {
         '以上是文献与指南里列出的手段，按病期与线序排列，不代表任何一项适合你。选哪一个，这一句需要问你的医生。'
       ],
       sources: [
-        { org: 'ELN', doc: '2025 European LeukemiaNet recommendations for the management of CML', version: 'Leukemia 2025;39(8):1797-1813', original: true, kind: 'fulltext', url: 'https://www.ncbi.nlm.nih.gov/pmc/articles/PMC12310532/', page: '页码待核' },
+        { org: 'ELN', doc: '2025 European LeukemiaNet recommendations for the management of CML', version: 'Leukemia 2025;39(8):1797-1813', original: true, kind: 'fulltext', url: 'https://www.ebi.ac.uk/europepmc/webservices/rest/PMC12310532/fullTextXML', page: '页码待核', note: 'Europe PMC 官方全文接口（XML）；人工阅读页见 PMC12310532（NCBI 对自动访问返回 203）' },
         { org: 'NCCN', doc: 'NCCN Guidelines · Chronic Myeloid Leukemia', version: 'V2.2024', entry: true, kind: 'hub', url: 'https://www.nccn.org/guidelines/guidelines-detail?category=1&id=1096', note: '临床版全文需在 NCCN 官网注册后取得；本台未取得该版原件' },
         { org: '中华医学会血液学分会', doc: '中国 CML 诊断与治疗指南（2025）', version: '中华血液学杂志 2025;46(12):1081-1093', original: true, nolink: true, note: 'PMC 与 DOI 落地页均未取得验链器 OK' }
       ]
@@ -112,7 +112,7 @@ window.DISEASE_PRIMER = {
       ],
       sources: [
         { org: '中华医学会血液学分会', doc: '中国 CML 诊断与治疗指南（2025）', version: '中华血液学杂志 2025;46(12):1081-1093', original: true, nolink: true, note: 'PMC 与 DOI 落地页均未取得验链器 OK' },
-        { org: 'ELN', doc: '2025 European LeukemiaNet recommendations for the management of CML', version: 'Leukemia 2025;39(8):1797-1813', original: true, kind: 'fulltext', url: 'https://www.ncbi.nlm.nih.gov/pmc/articles/PMC12310532/', page: '页码待核' },
+        { org: 'ELN', doc: '2025 European LeukemiaNet recommendations for the management of CML', version: 'Leukemia 2025;39(8):1797-1813', original: true, kind: 'fulltext', url: 'https://www.ebi.ac.uk/europepmc/webservices/rest/PMC12310532/fullTextXML', page: '页码待核', note: 'Europe PMC 官方全文接口（XML）；人工阅读页见 PMC12310532（NCBI 对自动访问返回 203）' },
         { org: 'NCCN', doc: 'NCCN Guidelines · Chronic Myeloid Leukemia', version: 'V2.2024', entry: true, kind: 'hub', url: 'https://www.nccn.org/guidelines/guidelines-detail?category=1&id=1096', note: '临床版全文需在 NCCN 官网注册后取得；本台未取得该版原件' },
         { org: 'ICC', doc: 'International Consensus Classification of Myeloid Neoplasms and Acute Leukemias', version: '2022', original: true, nolink: true, note: 'Blood DOI 403、PMC 203/0 chars' }
       ]

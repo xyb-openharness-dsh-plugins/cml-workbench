@@ -15,14 +15,14 @@
 
 慢性粒细胞白血病（CML）是骨髓造血干细胞克隆性增殖的白血病。诊断依据是 Ph 染色体和/或 BCR::ABL1 融合基因阳性；报告需明确转录本类型（e13a2 / e14a2 / 非典型）。2022 ICC 分类按骨髓或外周血原始细胞比例划分病程：慢性期（CP）<10%、加速期（AP）10–19%、急变期（BP）≥20%。BCR::ABL1 定量结果以国际标尺（IS%）报告，IS 需要实验室用转换因子（CF）本地标准化。本仓医学调研记录：中国患者中位发病年龄 45–50 岁，美国报告为 66 岁（指南原文口径）。
 
-来源：中华医学会血液学分会 · 中国 CML 诊断与治疗指南（2025）（中华血液学杂志 2025;46(12):1081-1093）· 未取得可验证原件 ｜ ICC · International Consensus Classification 2022（Blood 2022;140(11):1200-1228）· 未取得可验证原件 ｜ ELN · 2025 recommendations（Leukemia 2025;39(8):1797-1813）· [原件已取得（PMC 全文）](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC12310532/) · 页码待核
+来源：中华医学会血液学分会 · 中国 CML 诊断与治疗指南（2025）（中华血液学杂志 2025;46(12):1081-1093）· 未取得可验证原件 ｜ ICC · International Consensus Classification 2022（Blood 2022;140(11):1200-1228）· 未取得可验证原件 ｜ ELN · 2025 recommendations（Leukemia 2025;39(8):1797-1813）· [原件已取得（Europe PMC fullTextXML）](https://www.ebi.ac.uk/europepmc/webservices/rest/PMC12310532/fullTextXML) · 页码待核
 
 ### 医学资料规范和指南情况
 
 | 机构 | 文件 | 版本 / 年份 | 原件 | 本台的用途 |
 | --- | --- | --- | --- | --- |
 | 中华医学会血液学分会 | 中国 CML 诊断与治疗指南（2025） | 中华血液学杂志 2025;46(12):1081-1093 | 未取得可验证原件（PMC 返回 203/0 chars、DOI 落地页为 JS 渲染） | 诊断线、监测节奏、TFR 条件等原文口径的出处 |
-| ELN | 2025 European LeukemiaNet recommendations for the management of CML | Leukemia 2025;39(8):1797-1813 | [已取得：PMC 全文](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC12310532/) | 风险分层、监测与 TFR 口径的并列引用 |
+| ELN | 2025 European LeukemiaNet recommendations for the management of CML | Leukemia 2025;39(8):1797-1813 | [已取得：PMC 全文（Europe PMC fullTextXML）](https://www.ebi.ac.uk/europepmc/webservices/rest/PMC12310532/fullTextXML) · 人工阅读页见 PMC12310532（NCBI 对自动访问返回 203） | 风险分层、监测与 TFR 口径的并列引用 |
 | ELN | ELN CML 项目页（官网入口） | 访问于 2026-10-27 | [官方入口](https://www.leukemia-net.org/leukemias/cml/project_info/) · 2025 建议全文见 Leukemia / PMC，本台未在该页取得全文 | 官方入口，便于读者自行查找 ELN 资料 |
 | NCCN | NCCN Guidelines · Chronic Myeloid Leukemia | V2.2024（JNCCN 2024;22(1):43-69） | [官方入口（临床版）](https://www.nccn.org/guidelines/guidelines-detail?category=1&id=1096) · 临床版全文需在 NCCN 官网注册后取得；本台未取得该版原件 | 分期检查与治疗线序的并列引用 |
 | ICC | International Consensus Classification of Myeloid Neoplasms and Acute Leukemias | 2022（Blood 2022;140(11):1200-1228） | 未取得可验证原件（Blood DOI 返回 403、PMC 返回 203/0 chars） | CP / AP / BP 原始细胞界值的分类口径 |
@@ -46,7 +46,7 @@
 - 2025 版中国指南新增药物条目：阿思尼布、奥雷巴替尼、泊那替尼（本仓医学调研记录）。
 - 2025 版中国指南新增「主动性剂量调整」内容：达沙替尼 100→50/20 mg、泊那替尼 45→15 mg、奥雷巴替尼 40 与 30 mg 隔日（本仓医学调研记录）。
 
-来源：中华医学会血液学分会 · 中国 CML 诊断与治疗指南（2025）· 未取得可验证原件 ｜ ELN · 2025 recommendations · [原件已取得（PMC 全文）](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC12310532/) ｜ NCCN · CML V2.2024 · [官方入口](https://www.nccn.org/guidelines/guidelines-detail?category=1&id=1096)（需自行注册）｜ ICC 2022 · 未取得可验证原件
+来源：中华医学会血液学分会 · 中国 CML 诊断与治疗指南（2025）· 未取得可验证原件 ｜ ELN · 2025 recommendations · [原件已取得（Europe PMC fullTextXML）](https://www.ebi.ac.uk/europepmc/webservices/rest/PMC12310532/fullTextXML) ｜ NCCN · CML V2.2024 · [官方入口](https://www.nccn.org/guidelines/guidelines-detail?category=1&id=1096)（需自行注册）｜ ICC 2022 · 未取得可验证原件
 
 ## 关键功能
 
