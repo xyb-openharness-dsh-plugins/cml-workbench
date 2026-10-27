@@ -113,7 +113,7 @@
       byMonth[m] = (byMonth[m] || 0) + Number(e.amount || 0);
     });
     return Object.keys(byMonth).sort().map(function (m) {
-      return { d: m + '-01', v: byMonth[m], src: '本机新增（' + MEM_NOTICE + '）' };
+      return { d: m + '-01', v: byMonth[m], src: '本机新增' };
     });
   }
   /* P0-5：本机写入必须真的改变取数（趋势图新增点 / 费用聚合变化） */
@@ -302,7 +302,7 @@
     (ex().cost || []).forEach(function (e) {
       base.push({
         m: String(e.d || '').slice(0, 7), drug: e.drug + (e.spec ? ' · ' + e.spec : ''), amt: Number(e.amount || 0), qty: 1,
-        note: '医保标记：' + e.insured + ' · 本机新增（' + MEM_NOTICE + '）', extra: '',
+        note: '医保标记：' + e.insured + ' · 本机新增', extra: '',
         recorder: e.recorder || recorderDefault(), local: true, d: e.d
       });
     });
@@ -685,7 +685,7 @@
         id: 'pcr-' + pt.d, section: 'facts', visibility: 'shared', recorder: pt.recorder || rec,
         text: pt.d + ' BCR::ABL1 ' + num(pt.v, 3) + '%（' + (pt.lab || '未记录') + ' · IS 标化 ' +
           (pt.is_std === 1 ? '是' : '未记录') + ' · ' + (pt.sens || '未记录') + '）' +
-          (pt.local ? ' · 本机新增（' + MEM_NOTICE + '）' : '')
+          (pt.local ? ' · 本机新增' : '')
       });
     });
     var cbcDates = ((metricByKey('wbc') || { points: [] }).points || []).map(function (x) { return x.d; })
@@ -1224,7 +1224,7 @@
     else h += '<ul class="timeline">' + extraPts.map(function (x, i) {
       return '<li><span class="t-date">' + esc(x.d) + '</span><div>' + esc(num(x.v, 3) + ' ' + (x.unit || 'IS%') +
         ' · ' + (x.lab || '实验室未记录') + ' · IS 标化 ' + (x.is_std === 1 ? '是' : '否')) + ' ' + recBadge(x.recorder) +
-        ' <span class="src">来源：' + esc(x.src || ('本机录入 · ' + MEM_NOTICE)) + '</span> ' +
+        ' <span class="src">来源：' + esc(x.src || ('本机录入')) + '</span> ' +
         '<button type="button" class="btn btn-sm" data-act="mol-local-del" data-id="' + i + '">撤回这一条（本机）</button></div></li>';
     }).join('') + '</ul>';
     h += '</section>';
@@ -2668,7 +2668,7 @@
       ex().pcrVersions = ex().pcrVersions || [];
       ex().pcrVersions.push({
         d: last.d, from: last.v, to: last.v, at: TODAY, recorder: recorderDefault(),
-        src: '本机更正（' + MEM_NOTICE + '）· 原行保留不覆盖'
+        src: '本机更正 · 原行保留不覆盖'
       });
       state.molState = 'correcting';
       noteWrite('mol', '已建立更正版本链：' + last.d + ' 这条现在有 ' +
@@ -2787,7 +2787,7 @@
         ex().docVersions.push({
           id: id, from: cand ? cand[2] : '', to: String(nv).trim(),
           at: TODAY, recorder: recorderDefault(),
-          src: '本机更正（' + MEM_NOTICE + '）· 原行保留不覆盖'
+          src: '本机更正 · 原行保留不覆盖'
         });
         noteWrite('docs', '已更正候选 ' + id + '：' + (cand ? cand[2] : '') + ' → ' + String(nv).trim() +
           '（版本链 +1，原行保留，本机内存态）。');
