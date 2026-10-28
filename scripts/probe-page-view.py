@@ -60,12 +60,22 @@ def main():
                     result["overflow"].append({"width": w, "page": pid, "overflow_px": ov})
                 bad = page.evaluate("""() => {
                     const out = [];
+                    /* VNext：字号口径分三层（docs/PILOT-VNEXT-DESIGN.md §1.1/§3）
+                       - 正文：12.5–15
+                       - SVG 图表内文字（刻度 11 / 说明 12.5）：10.4–15.1（图表 1:1 渲染后才成立）
+                       - 数字豁免：.mval / .status-day b（24px，家族约定的卡片层级）
+                       豁免逐选择器/逐上下文声明，不按数值整体放行。 */
                     for (const el of document.querySelectorAll('body *')) {
                         if (el.offsetParent === null && el.tagName !== 'BODY') continue;
                         const t = (el.textContent || '').trim();
                         if (!t) continue;
                         const fs = parseFloat(getComputedStyle(el).fontSize);
-                        if (fs && (fs < 12.4 || fs > 15.1)) out.push({tag: el.tagName, cls: el.className, fs});
+                        if (!fs) continue;
+                        const isSvgText = el.tagName === 'text' && !!el.ownerSVGElement;
+                        const isNumeral = !!el.closest('.mval, .status-day b');
+                        const badBody = !isSvgText && !isNumeral && (fs < 12.4 || fs > 15.1);
+                        const badSvg = isSvgText && (fs < 10.4 || fs > 15.1);
+                        if (badBody || badSvg) out.push({tag: el.tagName, cls: el.className, fs});
                         if (out.length > 5) break;
                     }
                     return out;
@@ -96,8 +106,9 @@ def main():
             page.goto(f"{base}#{pid}", wait_until="load"); page.wait_for_timeout(150)
             shot(f"01-{pid}")
         # 折叠卡：先定位在哪一页（提到≠覆盖，必须实渲找），再出收/展态截图
+        # VNext：治疗路径从 #mol 搬到 #med/path，搜索范围必须跟着走，否则探针"全绿"只是没看那一页。
         host = None
-        for pid, _label in PAGES:
+        for pid, _label in PAGES + [("med/path", "治疗路径")]:
             page.goto(f"{base}#{pid}", wait_until="load"); page.wait_for_timeout(150)
             n = page.evaluate("() => document.querySelectorAll('details.phase-fold').length")
             result["foldout"].setdefault("cards_by_page", {})[pid] = n

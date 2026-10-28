@@ -63,7 +63,8 @@ def main():
         # W2 写后产物可观察：提交后出现写入提示，且页面文本出现刚填的值
         w2cases = [("cost", "cost-new", {"#cost-drug": "测试药名XYZ", "#cost-amount": "88"}, "测试药名XYZ", "cost-save"),
                    ("ae", "ae-new", {"#ae-desc": "测试不适说明ABC"}, "测试不适说明ABC", "ae-save"),
-                   ("med", "rx-new", {"#rx-drug": "测试药名RX", "#rx-dose": "100 mg", "#rx-reason": "测试原因RV"}, "测试药名RX", "rx-save")]
+                   # VNext：#med 默认打卡页，处方表单在 #med/rx（v0.1.2 之前靠"切页不重置 tab"的副作用才碰巧命中）
+                   ("med/rx", "rx-new", {"#rx-drug": "测试药名RX", "#rx-dose": "100 mg", "#rx-reason": "测试原因RV"}, "测试药名RX", "rx-save")]
         for pid, act, fills, val, saveact in w2cases:
             page.goto(f"{base}#{pid}", wait_until="load"); page.wait_for_timeout(200)
             page.evaluate("() => { document.querySelectorAll('details').forEach(d => d.open = true); }")

@@ -219,16 +219,20 @@ tbody tr{min-height:32px}
 td{height:auto}
 table.kv th{width:34%;white-space:nowrap}
 
-/* ---------- 趋势图 ---------- */
+/* 趋势图：VNext 1:1 渲染（不再把 viewBox 放大到卡片宽度）。
+   viewBox = 720，max-width = 720 → 1 SVG 单位 = 1 CSS px；刻度 11px / 正文 12.5px 才是真实字号。
+   窄宽时只让 .chart-wrap 横向滚动，页面本身不溢出。 */
 .chart-wrap{overflow-x:auto;min-width:0;border:1px solid var(--line);border-radius:var(--radius);padding:4px;background:var(--card)}
-svg.chart{display:block;width:100%;max-width:100%;min-width:0;height:auto}
+svg.chart{display:block;width:100%;max-width:720px;margin:0 auto;min-width:0;height:auto}
 /* 30 号窄宽：图表在容器内横向滚动，页面本身不得溢出 */
 .chart-wrap{max-width:100%}
 @media (max-width:720px){
-  svg.chart{min-width:560px}
+  svg.chart{min-width:720px}
   .chart-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
 }
-svg.chart text{font-size:12.5px;fill:var(--muted)}
+/* 字号由 SVG 元素上的 font-size 属性给出（刻度 11 / 说明 12.5）；这里只统一颜色。
+   注意不要在这里写 font-size：CSS 会覆盖 presentation attribute，一写就把刻度也放大。 */
+svg.chart text{fill:var(--muted)}
 svg.chart .axis{stroke:var(--line);stroke-width:1}
 svg.chart .line{fill:none;stroke:var(--accent);stroke-width:2;stroke-linecap:round}
 svg.chart .dot{fill:var(--accent)}
@@ -376,7 +380,7 @@ svg.chart .legend{fill:var(--muted)}
   .splitter{display:none}
   .session{flex:1 1 100%;width:auto;max-width:none;order:3;border-left:0;border-top:1px solid var(--line)}
   .card,.phase-fold,.chart-wrap{width:100%}
-  svg.chart{min-height:180px;min-width:560px}
+  svg.chart{min-height:180px;min-width:720px}
   /* 30 号窄宽：表格一律转键值行（kv 与普通 dataTable 都适用） */
   table thead{display:none}
   table tr{display:block;border-bottom:1px solid var(--line);padding:4px 0}
@@ -438,7 +442,10 @@ h4.sub { margin: 14px 0 6px; font-size: 13px; font-weight: 600; }
 .eyebrow { display: flex; align-items: center; gap: 6px; font-size: 12.5px; }
 .eyebrow .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
 .mname { font-size: 15px; font-weight: 600; }
-.mval { font-size: 33px; font-weight: 600; line-height: 1.1; margin-top: 2px; }
+/* VNext：33px → 24px。33px 数字在 640–720px 卡片里明显压过背面的迷你曲线，
+   用户反馈「字太大」；24px 仍保留「最新值优先」的层级，但与图表比例协调。
+   该选择器仍在 check-prototype 的数字豁免名单里（.mval），其余文字仍守 12.5–15。 */
+.mval { font-size: 24px; font-weight: 600; line-height: 1.1; margin-top: 2px; }
 .mval .munit { font-size: 13px; font-weight: 400; color: var(--muted); margin-left: 4px; }
 .mval.mnone, .mval.mqual { font-size: 15px; font-weight: 600; color: var(--muted); }
 .munit { font-size: 12.5px; color: var(--muted); }
@@ -497,7 +504,42 @@ svg .ax { font-size: 12.5px; fill: var(--muted); }
 .status-card{grid-column:1/-1; display:flex; flex-direction:column; gap:8px; margin-bottom:16px}
 .status-eyebrow{margin:0; font-size:12.5px; letter-spacing:.04em; color:var(--muted)}
 .status-day{margin:0; display:flex; align-items:baseline; gap:10px; flex-wrap:wrap}
-.status-day b{font-size:28px; line-height:1.15; color:var(--accent); font-variant-numeric:tabular-nums}
+.status-day b{font-size:24px; line-height:1.15; color:var(--accent); font-variant-numeric:tabular-nums}
 .status-anchor{font-size:12.5px; color:var(--muted)}
 .status-now{margin:0; font-size:13px; line-height:1.6}
 .status-actions{display:flex; gap:8px; flex-wrap:wrap; margin-top:2px}
+
+/* ---- VNext · 侧栏主题分组（docs/PILOT-VNEXT-DESIGN.md §2） ---- */
+.nav-group{margin:12px 8px 4px;font-size:12.5px;letter-spacing:.04em;color:var(--muted);font-weight:600}
+.nav-group:first-child{margin-top:0}
+
+/* ---- VNext · 看板主题入口：每主题 3 步（浏览 / 获取 / 采纳·记录） ---- */
+.theme-wrap{margin-bottom:16px}
+.theme-intro{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.theme-intro h2{margin:0}
+.theme-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.theme-card{border:1px solid var(--line);border-radius:var(--radius);padding:14px;background:var(--card);min-width:0}
+.theme-card h3{font-size:15px;margin:0 0 2px}
+.theme-q{margin:0 0 8px;font-size:12.5px;color:var(--muted)}
+.journey{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.journey li{display:grid;grid-template-columns:20px minmax(0,1fr);grid-template-areas:"n a" "n i";gap:0 8px;align-items:baseline}
+.step-n{grid-area:n;width:20px;height:20px;border-radius:50%;background:#2f6f6612;color:var(--accent);display:grid;place-items:center;font-size:12.5px;font-weight:600}
+.journey a{grid-area:a;font-size:13px;color:var(--fg);text-decoration:none;font-weight:600;padding:0}
+.journey a:hover{color:var(--accent);text-decoration:underline}
+.step-verb{display:inline-block;font-size:12.5px;font-weight:400;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:0 6px;margin-right:6px}
+.step-info{grid-area:i;font-size:12.5px;color:var(--muted)}
+.theme-more{margin:10px 0 0}
+
+/* ---- VNext · 提醒卡（本机规则 / 未接入模型） ---- */
+.insight-card{border-left:3px solid var(--accent)}
+.insight-list{list-style:none;margin:4px 0 8px;padding:0}
+.insight-list li{border-bottom:1px solid var(--line);padding:6px 0;font-size:13px}
+.insight-list li:last-child{border-bottom:0}
+.insight-status{font-size:12.5px;color:var(--muted);margin:6px 0}
+
+/* ---- VNext · 看板「今天」卡（原来的一整列卡片已收敛到主题页） ---- */
+.today-card{margin-bottom:16px}
+
+@media (max-width:900px){
+  .theme-grid{grid-template-columns:minmax(0,1fr)}
+}

@@ -145,7 +145,8 @@ def main():
 
         # ---- X3 双通道：⋯ 更多（手工）与 AI 草稿；写表单字段数 ----
         more_pages = [pid for pid, txt in dom.items() if "⋯ 更多" in txt or "更多" in txt]
-        ai_pages = [pid for pid, txt in dom.items() if "AI 协助" in txt or "ai-draft" in txt.lower()]
+        # VNext：页头入口文案从「AI 协助」收敛为「和 AI 讨论」（v0.1.2 起）；两种都认，避免探针过期。
+        ai_pages = [pid for pid, txt in dom.items() if "AI 协助" in txt or "和 AI 讨论" in txt or "ai-draft" in txt.lower()]
         forms = page.evaluate("""() => [...document.querySelectorAll('form, .manual-form')].map(f => ({
             id: f.id || f.className, fields: f.querySelectorAll('input,select,textarea').length }))""")
         res["X3"] = {"pages_with_more": more_pages, "pages_with_ai": ai_pages,
@@ -156,8 +157,9 @@ def main():
             res["failures"].append(f"X3 表单字段 >6：{res['X3']['forms_over_6']}")
 
         # ---- P0-1 打印媒体下折叠卡五块可见 ----
+        # VNext：治疗路径从 #mol 搬到 #med/path，未搜索的页面不能算"通过"。
         host = None
-        for pid, _ in PAGES:
+        for pid, _ in PAGES + [("med/path", "治疗路径")]:
             page.goto(f"{base}#{pid}", wait_until="load"); page.wait_for_timeout(120)
             if page.evaluate("() => document.querySelectorAll('details.phase-fold').length"):
                 host = pid
