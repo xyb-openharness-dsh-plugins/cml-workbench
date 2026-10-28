@@ -662,6 +662,7 @@
 
     /* 折线：按可比性分段；分类值不进入 */
     var segs = segmentsOf(numPts);
+    var breakIdx = 0;   /* 多个断点靠得近时，标签逐级上移 13px，避免文字互相压住 */
     segs.forEach(function (seg) {
       var screen = seg.pts.map(function (p) { return { x: x(p.d), y: yOf(p.v) }; });
       if (screen.length > 1) s += '<path class="line" d="' + smoothPath(screen) + '"/>';
@@ -676,7 +677,8 @@
         var xa = x(seg.gap[0].d), xb = x(seg.gap[1].d), xm = (xa + xb) / 2;
         s += '<line class="brk" x1="' + r2(xm) + '" y1="' + padT + '" x2="' + r2(xm) + '" y2="' + (padT + ph) + '"/>';
         var lx = Math.min(Math.max(xm + 4, padL), padL + pw - 130);
-        s += '<text class="brklab" x="' + r2(lx) + '" y="' + (padT + ph - 8) + '" font-size="11">不可比（实验室/标化不同）</text>';
+        var ly = padT + ph - 8 - (breakIdx++ * 13);
+        s += '<text class="brklab" x="' + r2(lx) + '" y="' + r2(ly) + '" font-size="11">不可比（实验室/标化不同）</text>';
       }
     });
 
