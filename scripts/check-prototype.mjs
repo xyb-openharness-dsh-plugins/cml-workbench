@@ -84,21 +84,53 @@ if (fails.length === 0) {
   if (!widthOk) F('panel/width', '面板默认 35% 或范围 25%–45% 缺失'); else O('panel/width', '面板 35% 默认 / 25–45% 范围在位');
   if (!/localStorage/.test(js)) F('panel/persist', '宽度偏好未持久化'); else O('panel/persist', '有偏好持久化');
 
-  /* --- 字号 12.5–15（正文口径），含一条显式豁免 ---
-     豁免：指标卡正面的大数字 `.mval` 用 33px。依据是 24 号 §5「数字约33px、项目名15px、
-     正文12px、元信息11px」——这是家族约定的**卡片内视觉层级**，不是正文。豁免必须逐选择器
-     声明（不是按数值放行），否则字号纪律会悄悄失效；新增豁免要写进 DEV-REQUIREMENTS §七。 */
-  const NUMERAL_SELECTORS = ['\\.mval', '\\.status-day b'];
-  const sizeRows = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)].flatMap(([, sel, body]) =>
-    [...body.matchAll(/font-size:\s*([\d.]+)px/g)].map((m) => ({ sel: sel.trim(), size: Number(m[1]) })));
-  const isNumeral = (sel) => NUMERAL_SELECTORS.some((re) => new RegExp(re).test(sel));
-  const bad = sizeRows.filter((r) => (r.size < 12.5 || r.size > 15) && !isNumeral(r.sel));
-  const sizes = sizeRows.map((r) => r.size);
-  if (bad.length) {
-    F('font/size', `越界字号 ${[...new Set(bad.map((r) => r.size + 'px@' + r.sel))].join(',')}（正文只允许 12.5–15）`);
-  } else {
-    O('font/size', `正文 ${[...new Set(sizes.filter((v) => v >= 12.5 && v <= 15))].sort((a, b) => a - b).join('/')} 全部在 12.5–15；豁免 ${[...new Set(sizeRows.filter((r) => isNumeral(r.sel)).map((r) => r.size + 'px@.mval'))].join(',') || '无'}`);
+  /* --- 字号令牌（docs/03 字号层级；2026-10-28 起从「12.5–15 三档」升级为七档令牌） ---
+     规则：
+       ① token 值必须落在白名单（11/12/13/14.5/18/26/40），且正文 token ≥13；
+       ② CSS 里每一条 font-size 要么直接写白名单里的 px，要么引用 var(--fs-*)；不允许 10px 以下；
+       ③ 仍逐选择器豁免数字层级 `.mval` / `.status-day b`（家族约定的卡片视觉层级，不按数值放行）。
+     这样写死 12.5px、11.3px 之类会立刻红，令牌本身也有数量约束。 */
+  const FS_ALLOWED = [11, 12, 13, 14.5, 18, 26, 40];
+  const BODY_MIN = 13;
+  const tokenRows = [...css.matchAll(/--fs-([a-z0-9]+):\s*([\d.]+)px/g)].map((m) => ({ name: m[1], size: Number(m[2]) }));
+  const tokenMap = new Map(tokenRows.map((t) => [t.name, t.size]));
+  const missingTokens = ['2xs', 'xs', 'sm', 'base', 'lg', 'xl', 'display'].filter((n) => !tokenMap.has(n));
+  if (missingTokens.length) F('font/tokens', `缺字号令牌 --fs-${missingTokens.join('/--fs-')}`);
+  const badTokens = tokenRows.filter((t) => !FS_ALLOWED.includes(t.size));
+  if (badTokens.length) F('font/tokens', `令牌值越界：${badTokens.map((t) => t.name + '=' + t.size).join(',')}（白名单 ${FS_ALLOWED.join('/')}）`);
+  const smallBodyTokens = tokenRows.filter((t) => ['sm', 'base', 'lg', 'xl', 'display'].includes(t.name) && t.size < BODY_MIN);
+  if (smallBodyTokens.length) F('font/tokens', `正文字号令牌 < ${BODY_MIN}px：${smallBodyTokens.map((t) => t.name).join(',')}`);
+  if (!missingTokens.length && !badTokens.length && !smallBodyTokens.length) {
+    O('font/tokens', `七档字号令牌 ${tokenRows.map((t) => t.name + '=' + t.size).join(' / ')}；正文 ≥${BODY_MIN}px`);
   }
+
+  const NUMERAL_SELECTORS = ['\\.mval', '\\.status-day b'];
+  const sizeRows = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)].flatMap(([, sel, body]) => {
+    const out = [];
+    for (const m of body.matchAll(/font-size:\s*([^;}]+)/g)) {
+      const raw = m[1].trim();
+      const px = raw.match(/^([\d.]+)px$/);
+      const ref = raw.match(/^var\(\s*--fs-([a-z0-9]+)\s*\)$/);
+      if (px) out.push({ sel: sel.trim(), size: Number(px[1]), raw });
+      else if (ref) out.push({ sel: sel.trim(), size: tokenMap.get(ref[1]), raw });
+      else out.push({ sel: sel.trim(), size: NaN, raw });
+    }
+    return out;
+  });
+  const isNumeral = (sel) => NUMERAL_SELECTORS.some((re) => new RegExp(re).test(sel));
+  const bad = sizeRows.filter((r) => {
+    if (isNumeral(r.sel)) return false;
+    return !(Number.isFinite(r.size) && FS_ALLOWED.includes(r.size));
+  });
+  if (bad.length) {
+    F('font/size', `越界字号 ${[...new Set(bad.map((r) => r.raw + '@' + r.sel))].join(',')}（只允许 ${FS_ALLOWED.join('/')}px 或 var(--fs-*)）`);
+  } else {
+    const used = [...new Set(sizeRows.filter((r) => !isNumeral(r.sel)).map((r) => r.size))].sort((a, b) => a - b);
+    O('font/size', `全部 font-size 落在七档令牌（${used.join('/')}）；数字豁免 ${[...new Set(sizeRows.filter((r) => isNumeral(r.sel)).map((r) => r.size + 'px'))].join(',') || '无'}`);
+  }
+  if (/font-size:\s*(?:[0-9](?:\.[0-9]+)?)px/.test(css) && sizeRows.some((r) => Number.isFinite(r.size) && r.size < 10)) {
+    F('font/min', '存在 <10px 的字号');
+  } else O('font/min', '无 <10px 字号');
 
   /* --- [hidden] --- */
   if (!/\[hidden\]\s*\{[^}]*display:\s*none\s*!important/.test(css)) F('hidden', '缺 [hidden]{display:none!important}'); else O('hidden', '[hidden] 规则在位');
@@ -215,6 +247,35 @@ if (fails.length === 0) {
 
   /* --- 判断色阶（红绿好坏） --- */
   if (/--good|--bad|--ok-green|is-normal|is-abnormal/.test(src)) F('color/judgement', '出现好坏语义色阶'); else O('color/judgement', '无好坏语义色阶');
+
+  /* --- 侧栏不重叠：导航独立滚动 + 页脚固定（2026-10-28 截图缺陷的口径） ---
+     只认 CSS 契约，不认"看起来还行"：三者缺一，短窗口下导航会压到家族尾注上。 */
+  const navScrollRule = /\.nav\s*\{[^}]*overflow-y:\s*auto[^}]*min-height:\s*0/.test(css) ||
+    /\.nav\s*\{[^}]*min-height:\s*0[^}]*overflow-y:\s*auto/.test(css);
+  const navScrollRule2 = /\.nav\s*\{[^}]*overflow-y:\s*auto/.test(css) && /\.nav\s*\{[^}]*min-height:\s*0/.test(css);
+  const bottomFixed = /\.sidebar-bottom\s*\{[^}]*flex:\s*0 0 auto/.test(css);
+  const sidebarClipped = /\.sidebar\s*\{[^}]*overflow:\s*hidden/.test(css) && /\.sidebar\s*\{[^}]*min-height:\s*0/.test(css);
+  if (!(navScrollRule || navScrollRule2)) F('sidebar/scroll', '.nav 缺 overflow-y:auto + min-height:0（导航没有独立滚动区，会压到页脚）');
+  else if (!bottomFixed) F('sidebar/footer', '.sidebar-bottom 缺 flex:0 0 auto（页脚会被导航挤压）');
+  else if (!sidebarClipped) F('sidebar/clip', '.sidebar 缺 overflow:hidden + min-height:0（整栏滚动会让页脚漂移）');
+  else O('sidebar/scroll', '侧栏：导航独立滚动（overflow-y:auto/min-height:0）+ 页脚 flex:0 0 auto + 整栏 overflow:hidden');
+
+  /* --- 菜单分组：两字分组标题 + 无重复「看板」组（截图里侧栏文字过密） --- */
+  const groups = [...html.matchAll(/<p class="nav-group">([^<]+)<\/p>/g)].map((m) => m[1].trim());
+  const wantGroups = ['指标', '复查', '用药', '长期'];
+  if (groups.join('|') !== wantGroups.join('|')) F('nav/groups', `侧栏分组为 [${groups.join(',')}]，应为 [${wantGroups.join(',')}]（两字标签，避免堆字）`);
+  else O('nav/groups', `侧栏四个两字分组：${wantGroups.join(' / ')}；首项看板无重复组标题`);
+
+  /* --- 主题卡结构：图标胶囊 + 标题 + 一句问题 + 3 个步骤胶囊 --- */
+  const themeCount = (js.match(/key:\s*'(?:metrics|ask|drug|long)'/g) || []).length;
+  const hasIcon = /icon:\s*'[^']+',\s*tint:\s*'[a-z]+'/.test(js);
+  const hasCapsule = /theme-icon/.test(js) && /class="journey"/.test(js) && /step-verb/.test(js);
+  const stepAria = /aria-label="' \+ esc\(aria\)/.test(js) || /第 ' \+ st\.n \+ ' 步/.test(js);
+  if (themeCount !== 4) F('theme/count', `主题卡 ${themeCount} 张（应 4 张）`);
+  else if (!hasIcon) F('theme/icon', '主题卡缺 icon/tint 字段（图标胶囊与分区色条依赖它）');
+  else if (!hasCapsule) F('theme/capsule', '主题卡缺图标胶囊 / journey / 步骤胶囊结构');
+  else if (!stepAria) F('theme/a11y', '主题卡步骤缺 aria-label（说明文字已收进 tooltip，读屏必须还能拿到）');
+  else O('theme/capsule', `4 张主题卡：icon+tint 图标胶囊 + 一句问题 + 3 个步骤胶囊（说明进 title/aria-label）`);
 
   /* --- 数据只读（唯一源） --- */
   const data = readFileSync(files.data, 'utf8');

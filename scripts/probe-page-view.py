@@ -6,7 +6,7 @@
 
 判据（出数字，不口头）：
   - 每档宽度下每页 scrollWidth 不得超过 clientWidth + 2（横向溢出 = 0）
-  - 全部可见文本字号落在 12.5–15.0 px
+  - 全部可见文本字号落在七档令牌 11/12/13/14.5/18/26/40（±0.1）；SVG 内文字 10.4–15.1
   - SVG 图表根 class="chart"；path 的 computed fill = none；stroke 为单色
   - 折叠卡默认 [open] = 0；展开后 section.pd-block = 5（顺序固定）
   - 截图落到 docs/screenshots/（README 用）
@@ -60,11 +60,13 @@ def main():
                     result["overflow"].append({"width": w, "page": pid, "overflow_px": ov})
                 bad = page.evaluate("""() => {
                     const out = [];
-                    /* VNext：字号口径分三层（docs/PILOT-VNEXT-DESIGN.md §1.1/§3）
-                       - 正文：12.5–15
+                    /* 字号口径（style.css :root 的七档令牌，2026-10-28 升级）
+                       - 正文 / 元信息：必须落在 11 / 12 / 13 / 14.5 / 18 / 26 / 40（±0.1）
+                         其中 13 及以上是正文与标题；11/12 只用于元信息与角标。
                        - SVG 图表内文字（刻度 11 / 说明 12.5）：10.4–15.1（图表 1:1 渲染后才成立）
-                       - 数字豁免：.mval / .status-day b（24px，家族约定的卡片层级）
-                       豁免逐选择器/逐上下文声明，不按数值整体放行。 */
+                       数字层级 .mval / .status-day b 已在白名单内（26 / 40），不再单独按数值放行。 */
+                    const SCALE = [11, 12, 13, 14.5, 18, 26, 40];
+                    const onScale = (fs) => SCALE.some((v) => Math.abs(fs - v) <= 0.1);
                     for (const el of document.querySelectorAll('body *')) {
                         if (el.offsetParent === null && el.tagName !== 'BODY') continue;
                         const t = (el.textContent || '').trim();
@@ -72,10 +74,9 @@ def main():
                         const fs = parseFloat(getComputedStyle(el).fontSize);
                         if (!fs) continue;
                         const isSvgText = el.tagName === 'text' && !!el.ownerSVGElement;
-                        const isNumeral = !!el.closest('.mval, .status-day b');
-                        const badBody = !isSvgText && !isNumeral && (fs < 12.4 || fs > 15.1);
+                        const badBody = !isSvgText && !onScale(fs);
                         const badSvg = isSvgText && (fs < 10.4 || fs > 15.1);
-                        if (badBody || badSvg) out.push({tag: el.tagName, cls: el.className, fs});
+                        if (badBody || badSvg) out.push({tag: el.tagName, cls: String(el.className), fs});
                         if (out.length > 5) break;
                     }
                     return out;

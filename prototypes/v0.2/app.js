@@ -28,9 +28,11 @@
   /* ================= VNext 主题化信息架构（docs/PILOT-VNEXT-DESIGN.md §2） =================
      4 个主题，每个主题恰好 3 步：浏览 → 获取 → 采纳/记录。每步只承载一类信息，
      页面侧对应「每屏 ≤2 类信息」的标签页。主题 key 也是侧栏分组与看板入口的唯一来源。 */
+  /* 主题卡结构固定为「图标胶囊 + 标题 + 一句问题 + 3 个步骤胶囊」。
+     icon 用单字，不用 emoji（check-prototype 禁 emoji）；tint 只做分区识别，不承载判读语义。 */
   var THEMES = [
     {
-      key: 'metrics', title: '指标怎么走', q: '这次数值和上次比，变化在哪里？',
+      key: 'metrics', icon: '指', tint: 'teal', title: '指标怎么走', q: '这次数值和上次比，变化在哪里？',
       steps: [
         { n: 1, verb: '浏览', label: '看趋势', info: '曲线 + 实验室/标化', href: '#mol' },
         { n: 2, verb: '获取', label: '翻历次', info: '历次记录（指标卡）', href: '#mol/cards' },
@@ -38,7 +40,7 @@
       ]
     },
     {
-      key: 'ask', title: '这次复查要问什么', q: '把数值变成能开口问的问题。',
+      key: 'ask', icon: '问', tint: 'slate', title: '这次复查要问什么', q: '把数值变成能开口问的问题。',
       steps: [
         { n: 1, verb: '浏览', label: '看问题清单', info: '问题 + 本人口径', href: '#prep' },
         { n: 2, verb: '获取', label: '补报告出处', info: '文件与字段候选', href: '#docs' },
@@ -46,7 +48,7 @@
       ]
     },
     {
-      key: 'drug', title: '用药与不良反应', q: '今天吃了没、哪里不舒服。',
+      key: 'drug', icon: '药', tint: 'amber', title: '用药与不良反应', q: '今天吃了没、哪里不舒服。',
       steps: [
         { n: 1, verb: '记录', label: '今日打卡', info: '已服 / 漏服', href: '#med/checkin' },
         { n: 2, verb: '记录', label: '记一次不舒服', info: '5 字段自述', href: '#ae' },
@@ -54,7 +56,7 @@
       ]
     },
     {
-      key: 'long', title: '长期安排', q: '停药条件、费用和临床研究，慢慢看。',
+      key: 'long', icon: '长', tint: 'plum', title: '长期安排', q: '停药条件、费用和临床研究，慢慢看。',
       steps: [
         { n: 1, verb: '浏览', label: '停药条件', info: '书面条件 + 三态', href: '#tfr' },
         { n: 2, verb: '记录', label: '记一笔费用', info: '5 字段票据', href: '#cost' },
@@ -1029,8 +1031,10 @@
     return Math.floor((t - anchor) / 86400000) + 1;
   }
   function primerButton() {
-    return '<button type="button" class="btn" data-primer-open aria-haspopup="dialog" aria-controls="disease-primer" aria-expanded="false" aria-label="疾病概要：定义、医学资料与指南情况、治疗全景、发展趋势">疾病概要：慢性粒细胞白血病是什么？</button>';
+    return '<button type="button" class="btn" data-primer-open aria-haspopup="dialog" aria-controls="disease-primer" aria-expanded="false" aria-label="疾病概要：定义、医学资料与指南情况、治疗全景、发展趋势">疾病概要</button>';
   }
+  /* 状态条：一屏同时看到 D+ 天数 / 当前用药 / 下次复查 / 当前阶段 + 两个出口。
+     「现在该做什么」用品牌实心按钮，其余信息一律只读；长句只留一句来源。 */
   function statusCard() {
     var p = profile();
     var rx = p.rx || [];
@@ -1039,46 +1043,64 @@
     var n = dayCount(anchor);
     var current = lines.length ? lines[lines.length - 1] : null;
     var currentName = current ? String(current.name || '') : '';
-    var currentDetail = current ? String(current.detail || '') : '';
     var rhythm = p.rhythm || [];
     var next = rhythm[0] || null;
-    var state = /密测中/.test(currentName) ? '密测中' : (current && current.done === false ? '进行中' : '未记录');
+    var stageState = /密测中/.test(currentName) ? '密测中' : (current && current.done === false ? '进行中' : '未记录');
     var coreHref = currentDrugKey() === 'none' ? '#tfr' : '#med';
-    var coreLabel = currentDrugKey() === 'none' ? '看停药条件（条件核对）→' : '看服药与打卡（今日打卡）→';
+    var coreLabel = currentDrugKey() === 'none' ? '看停药条件 →' : '今日打卡 →';
+    var lastRx = rx.length ? rx[rx.length - 1] : null;
+    var drugText = lastRx
+      ? String(lastRx[1]) + ' ' + String(lastRx[2]) + (String(lastRx[3]) === 'daily' ? ' · 每日' : '')
+      : '未记录';
 
-    var h = '<section class="card status-card" aria-labelledby="statusTitle">' +
-      '<p class="status-eyebrow" id="statusTitle">' + (n == null ? '状态卡 · 待初始化' : 'D+' + (n - 1) + ' 状态卡 · 距' + esc(next ? String(next[0]) : '下一阶段')) + '</p>';
+    var h = '<section class="card status-card" aria-labelledby="statusTitle">';
     if (n == null) {
-      h += '<p class="status-day"><b>待初始化</b></p>' +
-        '<p class="status-now">还没有锚点日（首剂 TKI 日期）。三步初始化：① 在「报告资料」录入确诊与首剂日期；② 在「指标趋势」记一笔复查；③ 回看板核对下次复查。</p>' +
-        '<div class="status-actions"><a class="btn" href="#docs">去三步向导起点（报告资料）→</a>' + primerButton() + '</div></section>';
+      h += '<div class="status-hero"><p class="status-eyebrow" id="statusTitle">状态卡 · 待初始化</p>' +
+        '<p class="status-day"><b>待初始化</b></p></div>' +
+        '<dl class="status-facts"><div class="fact"><dt>下一步</dt><dd>先录入确诊与首剂日期</dd></div></dl>' +
+        '<div class="status-actions"><a class="btn btn-primary" href="#docs">去报告资料 →</a>' + primerButton() + '</div></section>';
       return h;
     }
-    h += '<p class="status-day"><b>第 ' + n + ' 天</b><span class="status-anchor">锚点：首剂 TKI ' + esc(String(rx[0][0])) + '（D1）</span></p>' +
-      '<p class="status-now">当前阶段：<strong>' + esc(currentName) + '</strong> · ' + esc(state) + ' · 下次：' + esc(next ? String(next[3]) + '（' + String(next[0]) + '）' : '未记录') + '</p>' +
-      '<p class="muted">' + esc(currentDetail) + '</p>' +
-      '<div class="status-actions"><a class="btn" href="' + coreHref + '">' + coreLabel + '</a>' + primerButton() + '</div></section>';
+    h += '<div class="status-hero">' +
+        '<p class="status-eyebrow" id="statusTitle">D+' + (n - 1) + ' · 首剂 TKI</p>' +
+        '<p class="status-day"><b>' + n + '</b><span class="status-unit">天</span></p>' +
+        '<span class="status-anchor">' + esc(String(rx[0][0])) + '（D1）</span>' +
+      '</div>' +
+      '<dl class="status-facts">' +
+        '<div class="fact"><dt>当前用药</dt><dd>' + esc(drugText) + '</dd></div>' +
+        '<div class="fact"><dt>下次复查</dt><dd>' + esc(next ? String(next[3]) : '未记录') +
+          '<span class="fact-src">' + esc(next ? String(next[0]) : '门诊记录未记录') + '</span></dd></div>' +
+        '<div class="fact"><dt>当前阶段</dt><dd>' + esc(String(currentName).split('·')[0].trim() || '未记录') +
+          ' <span class="pill">' + esc(stageState) + '</span></dd></div>' +
+      '</dl>' +
+      '<div class="status-actions"><a class="btn btn-primary" href="' + coreHref + '">' + coreLabel + '</a>' + primerButton() + '</div>' +
+      '</section>';
     return h;
   }
 
-  /* ================= VNext：主题入口（每主题 3 步，每步 1 类信息） ================= */
+  /* ================= VNext：主题入口（每主题 3 步，每步 1 类信息） =================
+     卡片结构固定：图标胶囊 + 标题 + 一句问题 + 3 个步骤胶囊；步骤说明进 title / aria-label。 */
   function themeGrid() {
     var h = '<section class="theme-wrap" aria-label="按主题开始">' +
       '<div class="theme-intro"><h2 class="h2">今天想办哪件事</h2>' +
-      '<span class="muted">每个主题 3 步：浏览 → 获取 → 采纳 / 记录；一屏最多两类信息。</span></div>' +
+      '<span class="theme-hint">看 → 取 → 记</span></div>' +
       '<div class="theme-grid">';
     THEMES.forEach(function (tm) {
-      h += '<article class="theme-card" aria-labelledby="theme-' + tm.key + '">' +
-        '<h3 id="theme-' + tm.key + '">' + esc(tm.title) + '</h3>' +
+      h += '<article class="theme-card theme-' + esc(tm.tint) + '" aria-labelledby="theme-' + tm.key + '">' +
+        '<div class="theme-head"><span class="theme-icon" aria-hidden="true">' + esc(tm.icon) + '</span>' +
+        '<h3 id="theme-' + tm.key + '">' + esc(tm.title) + '</h3></div>' +
         '<p class="theme-q">' + esc(tm.q) + '</p>' +
         '<ol class="journey">' + tm.steps.map(function (st) {
-          return '<li><span class="step-n" aria-hidden="true">' + st.n + '</span>' +
-            '<a href="' + esc(st.href) + '"><span class="step-verb">' + esc(st.verb) + '</span>' + esc(st.label) + '</a>' +
-            '<span class="step-info">' + esc(st.info) + '</span></li>';
+          var aria = '第 ' + st.n + ' 步 ' + st.verb + '：' + st.label + '（' + st.info + '）';
+          return '<li><a href="' + esc(st.href) + '" title="' + esc(st.info) + '" aria-label="' + esc(aria) + '">' +
+            '<span class="step-n" aria-hidden="true">' + st.n + '</span>' +
+            '<span class="step-verb" aria-hidden="true">' + esc(st.verb) + '</span>' +
+            '<span class="step-label">' + esc(st.label) + '</span></a></li>';
         }).join('') + '</ol></article>';
     });
     h += '</div>' +
-      '<p class="muted theme-more">还可以直接去：<a href="#mol">分子线速览</a> · <a href="#onechart">病情一图秀（叠看几条线）</a> · <a href="#fert">生育计划</a> · <a href="#trial">临床试验（字段核对）</a></p>' +
+      '<details class="more theme-more"><summary>更多入口</summary>' +
+      '<p><a href="#mol">分子线速览</a> · <a href="#onechart">病情一图秀</a> · <a href="#fert">生育计划</a> · <a href="#trial">临床试验</a></p></details>' +
       '</section>';
     return h;
   }
@@ -1156,15 +1178,16 @@
         badge('已收起') + '<button type="button" class="btn btn-sm" data-act="insight-show">展开提醒</button></div></section>';
     }
     var list = localInsights();
-    return '<section class="card insight-card" id="insightCard" aria-labelledby="insightTitle">' +
-      '<div class="card-head"><h3 id="insightTitle">提醒</h3>' + badge('本机规则') + badge('未接入模型') + '</div>' +
-      '<p class="muted">只照抄本档案事实与日期差，不含判读；AI 分析通道的可行性见设计文档 §5。</p>' +
+    /* 长内容折叠：默认只露一行摘要（条数 + 属性），展开才看事实与 AI 通道说明。 */
+    return '<details class="more insight-card" id="insightCard">' +
+      '<summary><b>本机提醒</b><span class="fold-count">' + list.length + ' 条事实 · 未接入模型</span></summary>' +
+      '<p class="muted">只照抄本档案事实与日期差，不含判读。</p>' +
       '<ul class="insight-list">' + list.map(function (it) {
         return '<li>' + esc(it.text) + '<span class="src">来源：' + esc(it.src) + '</span></li>';
       }).join('') + '</ul>' +
       '<p class="insight-status" role="status">' + esc(insightStatusText()) + '</p>' +
       '<div class="row"><button type="button" class="btn" data-act="insight-gen">请 AI 分析（发给对话草稿）</button>' +
-      '<button type="button" class="btn btn-sm" data-act="insight-dismiss">收起提醒</button></div></section>';
+      '<button type="button" class="btn btn-sm" data-act="insight-dismiss">收起提醒</button></div></details>';
   }
 
   /* ================= 页面：dash ================= */
@@ -1173,12 +1196,12 @@
     var ml = p.med_log || {};
     var rhythm = p.rhythm || [];
 
-    var h = pageHead('看板', '先选一个主题，三步做完一件事。', 'dash',
+    var h = pageHead('看板', '按主题，三步做完一件事。', 'dash',
       '档案 ' + state.profile + ' · ' + authorView() + ' · 记录者随条目标注');
 
-    /* VNext：主题入口在做看板首屏，状态卡紧接其后（36 号 §2.6 结构保留） */
-    h += themeGrid();
+    /* 首屏层级：先看「我现在在哪一步」（D+ / 用药 / 复查），再选主题入口。 */
     h += statusCard();
+    h += themeGrid();
 
     /* 今天只留一件可执行的事（原来还有档案 / 分子速览 / 副作用速记 / 费用速记四张长卡，已收敛到主题页） */
     var todayState = state.checkin;
