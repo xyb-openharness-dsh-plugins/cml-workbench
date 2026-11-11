@@ -1,6 +1,6 @@
 {
   "name": "@xyb-community/cml-workbench",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "CML 患者与照护者的本机病程资料工作台：BCR::ABL1 国际标尺分子线、TKI 服药与换线档案、副作用日志、TFR 停药尝试旅程、用药费用记录",
   "private": true,
   "type": "module",
@@ -26,7 +26,7 @@
     "NOTICE.md"
   ],
   "scripts": {
-    "check": "node --check dsh/index.js && node --check lib/client.js && node scripts/check-workbench-package.mjs . && node scripts/check-host-contract.mjs && node scripts/check-prototype.mjs && node scripts/check-demo-data.mjs && node scripts/check-probe-coverage.mjs && node scripts/check-readme-assets.mjs && node scripts/check-primer-links.mjs",
+    "check": "node --check dsh/index.js && node --check lib/client.js && node scripts/build-version.mjs --check && node scripts/check-workbench-package.mjs . && node scripts/check-host-contract.mjs && node scripts/check-prototype.mjs && node scripts/check-demo-data.mjs && node scripts/check-probe-coverage.mjs && node scripts/check-readme-assets.mjs && node scripts/check-primer-links.mjs && node scripts/check-agent-pane-contract.mjs . && node --test test/*.test.mjs",
     "check:host": "node scripts/check-host-contract.mjs",
     "test": "node --test test/*.test.mjs",
     "audit": "node scripts/check-conformance.mjs .",

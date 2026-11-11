@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>小粒宝 GranPal · CML 患者工作台 v0.1.4（VNext 试点）</title>
+<title>小粒宝 GranPal · CML 患者工作台 v0.1.5（VNext 试点）</title>
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="primer.css">
 </head>
@@ -25,7 +25,7 @@
     </button>
     <button type="button" class="btn" data-act="settings" aria-haspopup="dialog">设置</button>
     <button type="button" class="btn" data-primer-open aria-haspopup="dialog" aria-controls="disease-primer" aria-expanded="false" aria-label="疾病概要：定义、医学资料与指南情况、治疗全景、发展趋势" title="疾病概要：定义 · 指南 · 治疗全景 · 趋势">?</button>
-    <button type="button" class="ver-chip" data-act="settings" aria-haspopup="dialog" aria-label="关于小粒宝：查看版本号与构建信息">v0.1.4</button>
+    <button type="button" class="ver-chip" data-act="settings" aria-haspopup="dialog" aria-label="关于小粒宝：查看版本号与构建信息">v0.1.5</button>
   </div>
 </header>
 
@@ -87,7 +87,7 @@
 <footer class="footer">
   <span>小粒宝 · 与 CML 患者和照护者一起记录、看懂、准备沟通</span>
   <span class="boundary">记录不是诊断 · 处置由治疗团队判断</span>
-  <span class="ver-line"><b class="ver">v0.1.4</b><em>构建 2026-10-28</em></span>
+  <span class="ver-line"><b class="ver">v0.1.5</b><em>构建 2026-10-28</em></span>
 </footer>
 
 <!-- 设置弹窗 CML-CFG：资料目录 / 凭据状态 / 临床数据包 / 关于与版本 -->
@@ -143,7 +143,7 @@
         <h3 class="h3">④ 关于与版本</h3>
         <table class="kv">
           <tbody>
-            <tr><th>版本</th><td data-th="版本">v0.1.4</td></tr>
+            <tr><th>版本</th><td data-th="版本">v0.1.5</td></tr>
             <tr><th>构建日</th><td data-th="构建日">2026-10-28</td></tr>
             <tr><th>渠道</th><td data-th="渠道">VNext 试点（本地 HTML，未装机）</td></tr>
             <tr><th>来源</th><td data-th="来源">docs/UI-DESIGN.md · docs/32-TREATMENT-PATHWAY-FOLDOUT.md · docs/SCENARIOS.md · docs/HVT-REVIEW.md</td></tr>
@@ -167,7 +167,7 @@
 </html>
 
 <!--
-==================== M2 原型自查清单（GranPal CML · v0.1.2 · 构建日 2026-10-25）====================
+==================== M2 原型自查清单（GranPal CML · 结构自查，跨版本沿用）====================
 检查方式：① Node 载入 demo-data.js + app.js，对 A/B 两档案 × 10 个一级页逐一 renderPage 并正则计数；
 ② 本机 Google Chrome headless（dump-dom 模式）在 1280 / 900 / 700 三档宽度真机渲染，跑 43 + 19 条 DOM 断言；
 ③ grep 源码。下面数字全部来自上述实跑输出，不是估计值。
@@ -234,7 +234,7 @@
      以 `shasum -a 256 prototypes/v0.2/demo-data.js` 与 `scripts/check-demo-data.mjs` 的输出为准，本文件不复制数字；B 档案患者原话为敏感词，界面不渲染、只在带来源 `<q>` 内按原文出现。
 
 8) 其他硬规则实跑结果
-   版本字面量 v0.1.2：顶栏版本章（ver-chip）与页脚都在；页脚含构建日 2026-10-25 与边界语「记录不是诊断 · 处置由治疗团队判断」。
+   版本字面量：顶栏版本章（ver-chip）与页脚都在，版本号取根目录 VERSION；页脚含边界语「记录不是诊断 · 处置由治疗团队判断」。
    （2026-10-27 R9：页脚不再放数据目录路径与 demo-data 路径——它们属于设置弹窗的「关于与版本」，页脚只留定位、边界、版本三样。）
    疾病概要（36 号 v2）：顶栏「?」（手写 aria-label）与看板状态卡副按钮均在；四段固定 definition → evidence → landscape → trend；
    链接闸门 `node scripts/check-primer-links.mjs` 全过；探针 `node scripts/probe-disease-primer.mjs` 10/10。

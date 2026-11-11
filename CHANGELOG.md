@@ -2,6 +2,15 @@
 
 只增不删；每条写清"改了什么 + 为什么 + 用户可见结果"。版本号与 VERSION、package.json 三处必须一致。
 
+## 0.1.5 — 2026-11-11
+
+- 修：点顶栏「AI 对话」没反应。customFrame 下宿主对没有会话的面板也会传隐藏 conversation 容器，`Boolean(conversation)` 恒真，按钮只 toggle 一个空面板。改为宿主归属判定（`ownsSession(currentSession())`）。
+- 新：无会话时点按钮走 `newSession(defaultWorkspace?.()?.workspaceId)` 创建归属会话，创建成功再展开面板；取消目录选择不留空会话并提示可再点一次；创建失败在工作台内显示原因。
+- 新：订阅 `desktopWorkbenches.subscribe` 触发重渲染，新建/切换会话后按钮文案与面板状态即时更新。
+- 新：`scripts/check-agent-pane-contract.mjs` 并入 `npm run check`（`--self-test` 必须能红）。
+- 不变：草稿只填入不发送；原生会话仍常挂载（隐藏走 display）；业务 iframe 与 splitter 未改。
+- 说明：README 截图沿用 0.1.4 构建（业务 UI 未变），文件名随版本前移到 0.1.5，未重拍。
+
 ## 0.1.4 — 2026-10-28
 
 UI 修复与视觉收敛（只改本仓；截图缺陷见 `iShot_2026-10-28_11.54.36.png`）。
